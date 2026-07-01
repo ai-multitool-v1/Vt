@@ -6049,6 +6049,21 @@
             console.log("[Iframe Fallback] Attempting:", url);
             var ifr = document.getElementById("iframePlayer");
             if (!ifr) return;
+            var urlLow = (url || '').toLowerCase();
+            var isMpdUrl = urlLow.indexOf('.mpd') !== -1 || urlLow.indexOf('format=mpd') !== -1;
+            var isM3u8Url = urlLow.indexOf('.m3u8') !== -1 || urlLow.indexOf('.m3u') !== -1;
+            var isTsUrl = /\.ts(\?|$)/i.test(url);
+            if (isMpdUrl || isM3u8Url || isTsUrl) {
+               console.log("[Iframe Fallback] Skipping iframe for stream URL type (mpd/m3u8/ts) - would cause download. Showing offline state.");
+               if (window._streamLoadTimeout) {
+                  clearTimeout(window._streamLoadTimeout);
+                  window._streamLoadTimeout = null;
+               }
+               playerLoader.classList.remove("hidden");
+               playerLoader.classList.add("loader-offline");
+               playerStatusText.innerText = "Stream Unavailable";
+               return;
+            }
             if (hls) {
                try { hls.destroy() } catch (e) {}
                hls = null;
@@ -6118,15 +6133,15 @@
                   if (hexKid.length > 32) hexKid = hexKid.substring(0, 32);
                   if (hexKey.length > 32) hexKey = hexKey.substring(0, 32);
                   if (hexKid.length === 32 && hexKey.length === 32) {
-                     var b64Kid = btoa(hexKid.match(/\w{2}/g).map(function(h){ return String.fromCharCode(parseInt(h, 16)); }).join(''));
-                     var b64Key = btoa(hexKey.match(/\w{2}/g).map(function(h){ return String.fromCharCode(parseInt(h, 16)); }).join(''));
-                     console.log('[Shaka-DRM] ClearKey configured: kid=' + b64Kid + ' key=' + b64Key);
                      var clearkeysObj = {};
-                     clearkeysObj[b64Kid] = b64Key;
+                     clearkeysObj[hexKid] = hexKey;
+                     console.log('[Shaka-DRM] ClearKey configured (hex format): kid=' + hexKid + ' key=' + hexKey);
                      return {
                         clearkeys: clearkeysObj,
                         drmSystem: 'org.w3.clearkey'
                      };
+                  } else {
+                     console.log('[Shaka-DRM] kid/key could not be normalized to 32 hex chars. kid_len=' + hexKid.length + ' key_len=' + hexKey.length);
                   }
                }
             } catch (eDrm) {
@@ -6322,6 +6337,7 @@
                }, { once: true });
             }
          } else if (typeof shaka !== 'undefined' && shaka.Player.isBrowserSupported() && (isDash || isHLS)) {
+            try { shaka.polyfill.installAll(); } catch (eShPoly) {}
             videoPlayer.pause();
             try { videoPlayer.removeAttribute('src'); } catch(eShSrc) {}
             try {
@@ -6334,7 +6350,13 @@
                window._shakaPlayer = _shakaPlayer;
             } catch (eShCreate) {
                console.log("[Shaka] create failed:", eShCreate && eShCreate.message);
-               tryIframeFallback(ch.url);
+               if (window._streamLoadTimeout) {
+                  clearTimeout(window._streamLoadTimeout);
+                  window._streamLoadTimeout = null;
+               }
+               playerLoader.classList.remove("hidden");
+               playerLoader.classList.add("loader-offline");
+               playerStatusText.innerText = "Player init failed";
             }
             if (_shakaPlayer) {
                try {
@@ -6358,9 +6380,14 @@
                   var drmConfig = _shakaConfigureDRM(ch.url, ch);
                   if (drmConfig) {
                      shakaConfig.drm = {
-                        servers: {},
-                        clearKeys: drmConfig.clearkeys
+                        servers: {
+                           'org.w3.clearkey': ''
+                        },
+                        clearKeys: drmConfig.clearkeys,
+                        preferredKeySystems: ['org.w3.clearkey'],
+                        keySystemsMapping: {}
                      };
+                     console.log('[Shaka-DRM] Configured DRM with', Object.keys(drmConfig.clearkeys).length, 'clearkey(s) and preferredKeySystems=org.w3.clearkey');
                   }
                   if (bfModeEnabled) {
                      shakaConfig.streaming.lowLatencyMode = false;
@@ -6466,7 +6493,7 @@
                   if (sm) sm.style.display = "none";
                });
             }
-         } else if (isHTTPDirect) {
+         } else if (isHTTPDirect && !isDash && !isHLS) {
             console.log("[HTTP Direct] Attempting native playback:", ch.url);
             videoPlayer.src = ch.url;
             videoPlayer.addEventListener("loadedmetadata", function() {
@@ -6515,7 +6542,25 @@
                playerStatusText.innerText = "";
             }, { once: true });
          } else {
-            if (isHTTPDirect) {
+            if (isDash && typeof shaka === 'undefined') {
+               console.log("[Stream] DASH stream detected but Shaka Player not loaded. Showing offline state to avoid browser download prompt.");
+               if (window._streamLoadTimeout) {
+                  clearTimeout(window._streamLoadTimeout);
+                  window._streamLoadTimeout = null;
+               }
+               playerLoader.classList.remove("hidden");
+               playerLoader.classList.add("loader-offline");
+               playerStatusText.innerText = "Player Library Failed";
+            } else if (isDash && typeof shaka !== 'undefined' && !shaka.Player.isBrowserSupported()) {
+               console.log("[Stream] DASH stream detected but Shaka Player reports browser unsupported.");
+               if (window._streamLoadTimeout) {
+                  clearTimeout(window._streamLoadTimeout);
+                  window._streamLoadTimeout = null;
+               }
+               playerLoader.classList.remove("hidden");
+               playerLoader.classList.add("loader-offline");
+               playerStatusText.innerText = "Browser Unsupported";
+            } else if (isHTTPDirect && !isDash && !isHLS) {
                tryIframeFallback(ch.url);
             } else {
                playerLoader.classList.remove("hidden");
