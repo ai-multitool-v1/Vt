@@ -36,6 +36,7 @@
    <script src="https://cdn.tailwindcss.com"></script>
    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;600&amp;family=Orbitron:wght@500;700&amp;display=swap" rel="stylesheet" />
    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+   <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest/dist/mpegts.min.js"></script>
    <script crossorigin="anonymous" src="https://cdn.dashjs.org/latest/modern/umd/dash.all.min.js"></script>
    <link crossorigin="anonymous" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha384-iw3OoTErCYJJB9mCa8LNS2hbsQ7M3C0EpIsO/H5+EGAkPGc6rk+V8i04oW/K5xq0" rel="stylesheet" />
    <script crossorigin="anonymous" integrity="sha384-yuGdyIzzYtOBlBG6JOWn+Ey9kpq7HocusNuxEGyyohr1eEyXpeEyehIIXC/hznw4" src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -5721,6 +5722,10 @@
                   } catch (e) {}
                   hls = null;
                }
+               if (window._mpegtsPlayer) {
+                  try { window._mpegtsPlayer.destroy(); } catch (eMtsIfr) {}
+                  window._mpegtsPlayer = null;
+               }
                if (window._dashPlayer) {
                                     try { if (typeof window._dashPlayer.detach === 'function') window._dashPlayer.detach(); } catch (eDetach) {}
                   try {
@@ -5879,6 +5884,10 @@
                            } catch (e) {}
                            hls = null;
                         }
+                        if (window._mpegtsPlayer) {
+                           try { window._mpegtsPlayer.destroy(); } catch (eMtsSt) {}
+                           window._mpegtsPlayer = null;
+                        }
                         if (window._dashPlayer) {
                                                       try { if (typeof window._dashPlayer.detach === 'function') window._dashPlayer.detach(); } catch (eDetach) {}
                            try {
@@ -5910,6 +5919,10 @@
                               } catch (e) {}
                               hls = null;
                            }
+                           if (window._mpegtsPlayer) {
+                              try { window._mpegtsPlayer.destroy(); } catch (eMtsSt2) {}
+                              window._mpegtsPlayer = null;
+                           }
                            if (window._dashPlayer) {
                                                             try { if (typeof window._dashPlayer.detach === 'function') window._dashPlayer.detach(); } catch (eDetach) {}
                               try {
@@ -5927,6 +5940,14 @@
             } catch (e) {}
             hls = null;
          }
+         if (window._mpegtsPlayer) {
+            try { window._mpegtsPlayer.destroy(); } catch (eMtsCleanup) {}
+            window._mpegtsPlayer = null;
+         }
+         if (window._mpegtsPlayTimeout) {
+            clearTimeout(window._mpegtsPlayTimeout);
+            window._mpegtsPlayTimeout = null;
+         }
          if (window._streamLoadTimeout) {
             clearTimeout(window._streamLoadTimeout);
          }
@@ -5940,6 +5961,10 @@
                      hls.destroy()
                   } catch (e) {}
                   hls = null;
+               }
+               if (window._mpegtsPlayer) {
+                  try { window._mpegtsPlayer.destroy(); } catch (eMtsTo) {}
+                  window._mpegtsPlayer = null;
                }
                if (window._dashPlayer) {
                                     try { if (typeof window._dashPlayer.detach === 'function') window._dashPlayer.detach(); } catch (eDetach) {}
@@ -5971,6 +5996,10 @@
                   hls.destroy()
                } catch (e) {}
                hls = null;
+            }
+            if (window._mpegtsPlayer) {
+               try { window._mpegtsPlayer.destroy(); } catch (eMtsFb) {}
+               window._mpegtsPlayer = null;
             }
             if (window._dashPlayer) {
                try { if (typeof window._dashPlayer.detach === 'function') window._dashPlayer.detach(); } catch (eDetach) {}
@@ -6043,7 +6072,56 @@
             try { videoPlayer.removeAttribute('src'); } catch(e) {}
             window._dashPlayer = dashjs.MediaPlayer().create();
 
-            window._dashPlayer.initialize(videoPlayer, ch.url, false);
+            try {
+               var _drmKid = (ch.kid || ch.kid_id || ch.KID || '').toString().trim();
+               var _drmKey = (ch.key || ch.decryption_key || '').toString().trim();
+               if (!_drmKid || !_drmKey) {
+                  var _urlTokenMatch = (ch.url || '').match(/[?&](?:token|drm|key|kid)=([^&]+)/i);
+                  if (_urlTokenMatch) {
+                     var _tokenParts = decodeURIComponent(_urlTokenMatch[1]).split(':');
+                     if (_tokenParts.length >= 2) {
+                        if (!_drmKid) _drmKid = _tokenParts[0].trim();
+                        if (!_drmKey) _drmKey = _tokenParts[1].trim();
+                     }
+                  }
+                  var _urlKidMatch = (ch.url || '').match(/[?&]kid=([^&]+)/i);
+                  var _urlKeyMatch = (ch.url || '').match(/[?&]key=([^&]+)/i);
+                  if (!_drmKid && _urlKidMatch) _drmKid = decodeURIComponent(_urlKidMatch[1]).trim();
+                  if (!_drmKey && _urlKeyMatch) _drmKey = decodeURIComponent(_urlKeyMatch[1]).trim();
+               }
+               if (_drmKid && _drmKey) {
+                  var _hexKid = _drmKid.replace(/[^a-fA-F0-9]/g, '').toLowerCase();
+                  var _hexKey = _drmKey.replace(/[^a-fA-F0-9]/g, '').toLowerCase();
+                  while (_hexKid.length < 32) _hexKid = '0' + _hexKid;
+                  while (_hexKey.length < 32) _hexKey = '0' + _hexKey;
+                  if (_hexKid.length > 32) _hexKid = _hexKid.substring(0, 32);
+                  if (_hexKey.length > 32) _hexKey = _hexKey.substring(0, 32);
+                  if (_hexKid.length === 32 && _hexKey.length === 32) {
+                     var _b64Kid = btoa(_hexKid.match(/\w{2}/g).map(function(h){ return String.fromCharCode(parseInt(h, 16)); }).join(''));
+                     var _b64Key = btoa(_hexKey.match(/\w{2}/g).map(function(h){ return String.fromCharCode(parseInt(h, 16)); }).join(''));
+                     var _clearKeyToken = { 'org.w3.clearkey': { 'clearkeys': {} } };
+                     _clearKeyToken['org.w3.clearkey'].clearkeys[_b64Kid] = _b64Key;
+                     console.log('[DASH-DRM] ClearKey configured: kid=' + _b64Kid + ' key=' + _b64Key);
+                     window._dashPlayer.initialize(videoPlayer, ch.url, false);
+                     window._dashPlayer.updateSettings({
+                        debug: { logLevel: 0 },
+                        streaming: {
+                           protection: {
+                              clearkeys: _clearKeyToken['org.w3.clearkey'].clearkeys
+                           }
+                        }
+                     });
+                  } else {
+                     console.log('[DASH-DRM] kid/key could not be normalized, skipping DRM. kid_len=' + _hexKid.length + ' key_len=' + _hexKey.length);
+                     window._dashPlayer.initialize(videoPlayer, ch.url, false);
+                  }
+               } else {
+                  window._dashPlayer.initialize(videoPlayer, ch.url, false);
+               }
+            } catch (eDrmInit) {
+               console.log('[DASH-DRM] init error, fallback to plain initialize:', eDrmInit && eDrmInit.message);
+               try { window._dashPlayer.initialize(videoPlayer, ch.url, false); } catch(eInit2) {}
+            }
 
             try {
 
@@ -6273,27 +6351,118 @@
                }
             }, 5000);
          } else if (isTS) {
-            videoPlayer.src = ch.url;
-            videoPlayer.addEventListener("loadedmetadata", function() {
-               if (window._streamLoadTimeout) {
-                  clearTimeout(window._streamLoadTimeout);
-                  window._streamLoadTimeout = null;
+            if (typeof mpegts !== 'undefined' && mpegts.isSupported()) {
+               if (window._mpegtsPlayer) {
+                  try { window._mpegtsPlayer.destroy(); } catch (eMts1) {}
+                  window._mpegtsPlayer = null;
                }
-               playerLoader.classList.add("hidden");
-               playerLoader.classList.remove("loader-offline");
-               var sm = document.getElementById("speedMeter");
-               if (sm) sm.style.display = "none";
-               videoPlayer.play().catch(function(e) {
-                  console.log("Auto-play blocked", e)
-               });
-            }, {
-               once: true
-            });
-            videoPlayer.addEventListener("error", function() {
-               tryIframeFallback(ch.url);
-            }, {
-               once: true
-            });
+               try {
+                  window._mpegtsPlayer = mpegts.createPlayer({
+                     type: 'mpegts',
+                     isLive: true,
+                     url: ch.url
+                  }, {
+                     enableStashBuffer: false,
+                     stashInitialSize: 128,
+                     liveBufferLatencyChasing: true,
+                     liveBufferLatencyMaxLatency: 1.5,
+                     liveBufferLatencyMinRemain: 0.2,
+                     liveSync: true
+                  });
+                  window._mpegtsPlayer.on(mpegts.Events.ERROR, function(errType, errDetail) {
+                     console.log('[mpegts.js] error:', errType, errDetail);
+                     if (errType === mpegts.ErrorTypes.NETWORK_ERROR ||
+                         errType === mpegts.ErrorTypes.MEDIA_ERROR) {
+                        try { window._mpegtsPlayer.destroy(); } catch (eMts2) {}
+                        window._mpegtsPlayer = null;
+                        tryIframeFallback(ch.url);
+                     }
+                  });
+                  window._mpegtsPlayer.on(mpegts.Events.LOADING_COMPLETE, function() {
+                     console.log('[mpegts.js] loading complete');
+                  });
+                  window._mpegtsPlayer.attachMedia(videoPlayer);
+                  videoPlayer.addEventListener("loadedmetadata", function() {
+                     if (window._streamLoadTimeout) {
+                        clearTimeout(window._streamLoadTimeout);
+                        window._streamLoadTimeout = null;
+                     }
+                     playerLoader.classList.add("hidden");
+                     playerLoader.classList.remove("loader-offline");
+                     var sm = document.getElementById("speedMeter");
+                     if (sm) sm.style.display = "none";
+                     videoPlayer.play().catch(function(e) {
+                        console.log("Auto-play blocked", e)
+                     });
+                  }, { once: true });
+                  videoPlayer.addEventListener("error", function() {
+                     tryIframeFallback(ch.url);
+                  }, { once: true });
+                  window._mpegtsPlayer.load();
+                  videoPlayer.play().catch(function(e) {
+                     console.log("[mpegts.js] auto-play blocked", e);
+                  });
+                  var _mtsPlayTimeout = setTimeout(function() {
+                     if (!playerLoader.classList.contains('hidden')) {
+                        try { window._mpegtsPlayer.destroy(); } catch (eMts3) {}
+                        window._mpegtsPlayer = null;
+                        tryIframeFallback(ch.url);
+                     }
+                  }, 12000);
+                  window._mpegtsPlayTimeout = _mtsPlayTimeout;
+                  videoPlayer.addEventListener("playing", function() {
+                     if (window._mpegtsPlayTimeout) {
+                        clearTimeout(window._mpegtsPlayTimeout);
+                        window._mpegtsPlayTimeout = null;
+                     }
+                     if (window._streamLoadTimeout) {
+                        clearTimeout(window._streamLoadTimeout);
+                        window._streamLoadTimeout = null;
+                     }
+                     playerLoader.classList.add("hidden");
+                     playerLoader.classList.remove("loader-offline");
+                     var sm = document.getElementById("speedMeter");
+                     if (sm) sm.style.display = "none";
+                  }, { once: true });
+               } catch (eMtsCreate) {
+                  console.log("[mpegts.js] create failed, fallback:", eMtsCreate && eMtsCreate.message);
+                  videoPlayer.src = ch.url;
+                  videoPlayer.addEventListener("loadedmetadata", function() {
+                     if (window._streamLoadTimeout) {
+                        clearTimeout(window._streamLoadTimeout);
+                        window._streamLoadTimeout = null;
+                     }
+                     playerLoader.classList.add("hidden");
+                     playerLoader.classList.remove("loader-offline");
+                     var sm = document.getElementById("speedMeter");
+                     if (sm) sm.style.display = "none";
+                     videoPlayer.play().catch(function(e) {
+                        console.log("Auto-play blocked", e)
+                     });
+                  }, { once: true });
+                  videoPlayer.addEventListener("error", function() {
+                     tryIframeFallback(ch.url);
+                  }, { once: true });
+               }
+            } else {
+               videoPlayer.src = ch.url;
+               videoPlayer.addEventListener("loadedmetadata", function() {
+                  if (window._streamLoadTimeout) {
+                     clearTimeout(window._streamLoadTimeout);
+                     window._streamLoadTimeout = null;
+                  }
+                  playerLoader.classList.add("hidden");
+                  playerLoader.classList.remove("loader-offline");
+                  var sm = document.getElementById("speedMeter");
+                  if (sm) sm.style.display = "none";
+                  videoPlayer.play().catch(function(e) {
+                     console.log("Auto-play blocked", e)
+                  });
+               }, { once: true });
+               videoPlayer.addEventListener("error", function() {
+                  tryIframeFallback(ch.url);
+               }, { once: true });
+            }
          } else if (Hls.isSupported()) {
             if (bfModeEnabled) {
                hls = new Hls({
@@ -7620,6 +7789,7 @@
          if (mobileSearchInput) mobileSearchInput.value = '';
          if (currentPlayingChannel) {
             if (hls) { try { hls.destroy(); } catch(e) {} hls = null; }
+            if (window._mpegtsPlayer) { try { window._mpegtsPlayer.destroy(); } catch(eMtsR) {} window._mpegtsPlayer = null; }
             if (window._dashPlayer) {
                try {
 
@@ -7861,7 +8031,31 @@
 
               document.getElementById('homeView').classList.add('hidden-view');
               document.getElementById('mainContent').classList.remove('hidden-view');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
+              var _isWideScreen = window.innerWidth >= 1024;
+              var _isTvMode = document.body.classList.contains('tv-mode');
+              var _isTablet = (function() {
+                  var ua = (navigator.userAgent || '').toLowerCase();
+                  return /ipad|tablet|playbook|silk|android(?!.*mobile)/i.test(ua) || (window.screen && window.screen.width >= 768 && window.screen.width < 1280);
+              })();
+              var _isTVDeviceFlag = (typeof isTVDevice !== 'undefined' && isTVDevice) || _isTvMode;
+              if (_isWideScreen || _isTvMode || _isTablet || _isTVDeviceFlag) {
+                  setTimeout(function() {
+                      var channelPanel = document.getElementById('channelPanel');
+                      if (channelPanel) {
+                          channelPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                          try {
+                              var firstCard = channelPanel.querySelector('.card-animate');
+                              if (firstCard) {
+                                  setTimeout(function() {
+                                      try { firstCard.focus({ preventScroll: false }); } catch(eF) {}
+                                  }, 300);
+                              }
+                          } catch(eFC) {}
+                      }
+                  }, 80);
+              } else {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+              }
           }
       }
 
