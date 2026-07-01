@@ -3122,7 +3122,7 @@
          </div>
          <div class="sidebar-section">
             <div class="sidebar-section-title"><i class="fas fa-link"></i> Custom M3U Playlist</div>
-            <div class="m3u-input-group"><input id="customM3uInput" placeholder="Paste M3U URL here..." tabindex="0" type="text" /><button id="loadM3uBtn" tabindex="0">Load</button></div>
+            <div class="m3u-input-group"><input id="customM3uInput" placeholder="Paste any M3U / M3U8 / JSON URL..." tabindex="0" type="text" /><button id="loadM3uBtn" tabindex="0">Load</button></div>
             <div style="margin-top:8px;"><input type="file" id="localM3uFile" accept=".m3u,.m3u8,.txt" style="display:none" /><button class="quick-cat-btn" id="localM3uBtn" tabindex="0" style="width:100%;margin:0;"><i class="fas fa-upload text-cyan-400"></i> Upload Local M3U File</button></div>
             <p class="text-[10px] text-gray-600 mb-3">Paste any M3U/M3U8 playlist URL to load channels.</p>
             <div class="sidebar-section-title" style="margin-top:8px"><i class="fas fa-history"></i> History</div>
@@ -4901,6 +4901,26 @@
       let isFloating = false;
       let currentPlaylistSource = "default";
       var bfModeEnabled = (localStorage.getItem('aitv_bf_mode') === 'on');
+      // Cloudflare Worker proxy for HTTP-protocol streams (and mixed-content scenarios).
+      // Deployed via wrangler; see worker/index.js and wrangler.toml.
+      var STREAM_PROXY_BASE = 'https://ai-multitools.workers.dev/';
+      function buildProxiedUrl(originalUrl, ch) {
+         if (!originalUrl) return originalUrl;
+         // Already proxied? don't double-wrap.
+         if (originalUrl.indexOf(STREAM_PROXY_BASE) === 0) return originalUrl;
+         var qs = '?url=' + encodeURIComponent(originalUrl);
+         if (ch && ch.user_agent) qs += '&ua=' + encodeURIComponent(ch.user_agent);
+         if (ch && ch.referer) qs += '&ref=' + encodeURIComponent(ch.referer);
+         return STREAM_PROXY_BASE + qs;
+      }
+      function shouldProxyStream(url, ch) {
+         if (!url) return false;
+         // Always proxy http:// (insecure) streams since browsers block mixed-content.
+         if (/^http:\/\//i.test(url)) return true;
+         // Optionally proxy when channel declares a referer/user-agent the origin expects.
+         if (ch && (ch.referer || ch.user_agent)) return true;
+         return false;
+      }
       const playerWrapper = document.getElementById("playerWrapper");
       const videoPlayer = document.getElementById("videoPlayer");
       const grid = document.getElementById("channelGrid");
@@ -5113,20 +5133,85 @@
          const lines = text.split("\n");
          let current = {};
          const channels = [];
+         // M3U content tags we honor on the line before a URL.
+         // Anything else (custom tags, comments) is preserved as raw on `current._raw`.
+         const EXTINF_ATTR_MAP = {
+            'tvg-logo': 'logo',
+            'tvg-id': 'tvg_id',
+            'tvg-name': 'tvg_name',
+            'tvg-group': 'group',
+            'group-title': 'group',
+            'tvg-language': 'language',
+            'tvg-country': 'country',
+            'kid': 'kid',
+            'key': 'key',
+            'k_session': 'k_session',
+            'session': 'session',
+            'token': 'token',
+            'user-agent': 'user_agent',
+            'referer': 'referer',
+            'http-referrer': 'referer',
+            'http-user-agent': 'user_agent',
+            'stream-type': 'stream_type',
+            'type': 'stream_type'
+         };
          for (let line of lines) {
             line = (line || "").trim();
             if (!line) continue;
             if (line.startsWith("#EXTINF:")) {
                const info = line.split(",");
+               const name = info[info.length - 1].trim();
                current = {
-                  name: info[info.length - 1].trim(),
-                  logo: (line.match(/tvg-logo="([^"]*)"/) || [])[1] || "",
-                  group: (line.match(/group-title="([^"]*)"/) || [])[1] || "General"
+                  name: name,
+                  logo: "",
+                  group: "General",
+                  _raw: line
                };
+               // Parse every attribute key="value" pair generically
+               var attrRegex = /([a-zA-Z0-9_\-]+)\s*=\s*"([^"]*)"/g;
+               var am;
+               while ((am = attrRegex.exec(line)) !== null) {
+                  var attrKey = am[1].toLowerCase();
+                  var attrVal = am[2];
+                  var mapTo = EXTINF_ATTR_MAP[attrKey];
+                  if (mapTo) {
+                     // Don't overwrite group-title if group already set from tvg-group
+                     if (mapTo === 'group' && current.group && current.group !== 'General') continue;
+                     current[mapTo] = attrVal;
+                  } else {
+                     // Preserve unknown attributes too (execute any content tag)
+                     current[attrKey.replace(/-/g, '_')] = attrVal;
+                  }
+               }
+               continue;
+            }
+            if (line.startsWith("#EXT-X-") || line.startsWith("#EXTGRP:")) {
+               // Honor #EXTGRP:Group Name directive (sets group for next channel)
+               if (line.startsWith("#EXTGRP:")) {
+                  var grp = line.substring("#EXTGRP:".length).trim();
+                  if (grp) {
+                     if (!current.name) current = { name: '', logo: '', group: 'General' };
+                     current.group = grp;
+                  }
+               }
+               // Honor #EXTVLCOPT: declarations (http-user-agent, http-referrer, etc.)
+               if (line.startsWith("#EXTVLCOPT:")) {
+                  var opt = line.substring("#EXTVLCOPT:".length).trim();
+                  var eqIdx = opt.indexOf("=");
+                  if (eqIdx > 0) {
+                     var optKey = opt.substring(0, eqIdx).trim().toLowerCase().replace(/-/g, '_');
+                     var optVal = opt.substring(eqIdx + 1).trim();
+                     if (optKey === 'http_user_agent') optKey = 'user_agent';
+                     if (optKey === 'http_referrer') optKey = 'referer';
+                     if (!current.name) current = { name: '', logo: '', group: 'General' };
+                     current[optKey] = optVal;
+                  }
+               }
                continue;
             }
             if (line.startsWith("http")) {
-               if (current.name) {
+               if (current.name || current._raw) {
+                  if (!current.name) current.name = line.substring(line.lastIndexOf('/') + 1);
                   channels.push({
                      ...current,
                      url: line
@@ -5274,6 +5359,10 @@
             media_data: ch.media_data || '',
             media_mime: ch.media_mime || '',
             media_filename: ch.media_filename || '',
+            kid: ch.kid || '',
+            key: ch.key || '',
+            is_admin: true,
+            sort_order: ch.sort_order !== undefined ? ch.sort_order : 999,
             id: ch.id
          };
       }
@@ -5391,19 +5480,36 @@
          });
       }
       async function loadCustomM3U(url) {
-         if (!url || !url.startsWith("http")) {
-            alert("Please enter a valid M3U URL");
+         if (!url || !(/^https?:\/\//i.test(url))) {
+            alert("Please enter a valid URL (must start with http:// or https://)");
             return
          }
          showChannelLoader();
          const text = await m3uFetch(url);
          if (text) {
+            // Auto-detect JSON vs M3U by extension or content.
+            var urlLow = url.toLowerCase();
+            var isJson = urlLow.endsWith('.json') ||
+                         (/^\s*[\{\[]/.test(text) && !/^#EXTM3U/i.test(text.trim()));
+            if (isJson) {
+               var jsonChannels = parseJSONPlaylist(text, 'Custom');
+               if (jsonChannels.length > 0) {
+                  allChannels = jsonChannels;
+                  renderCategories(allChannels);
+                  renderGrid(allChannels);
+                  currentPlaylistSource = "custom";
+                  saveM3UHistory(url);
+                  closeSettings();
+                  showToast('Loaded ' + jsonChannels.length + ' channels from JSON');
+                  return;
+               }
+            }
             loadChannelsFromM3UText(text);
             currentPlaylistSource = "custom";
             saveM3UHistory(url);
             closeSettings()
          } else {
-            alert("Failed to load M3U. Check URL or try again.");
+            alert("Failed to load playlist. Check URL or try again.");
             grid.innerHTML = '<div class="channel-loader"><svg viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg"><circle cx="25" cy="25" r="20" fill="none" stroke="#ff0055" stroke-width="3" stroke-dasharray="31.4 31.4" stroke-linecap="round"/></svg><span>Failed to load playlist.</span></div>';
             document.getElementById("loadMoreBtn").style.display = "none"
          }
@@ -5475,6 +5581,16 @@
          grid.innerHTML = "";
          var pinnedUrls = getPinned();
          var sorted = [].concat(list).sort(function(a, b) {
+            // 1) Admin channels always on top (across ALL categories), sorted by sort_order
+            var aAdmin = a && a.is_admin ? 0 : 1;
+            var bAdmin = b && b.is_admin ? 0 : 1;
+            if (aAdmin !== bAdmin) return aAdmin - bAdmin;
+            if (aAdmin === 0 && bAdmin === 0) {
+               var aOrder = (a && typeof a.sort_order === 'number') ? a.sort_order : 999;
+               var bOrder = (b && typeof b.sort_order === 'number') ? b.sort_order : 999;
+               if (aOrder !== bOrder) return aOrder - bOrder;
+            }
+            // 2) Pinned channels next
             var aP = pinnedUrls.includes(a.url) ? 0 : 1;
             var bP = pinnedUrls.includes(b.url) ? 0 : 1;
             return aP - bP;
@@ -5931,9 +6047,23 @@
          var isMP4 = urlLower.match(/\.(mp4|mkv|webm|avi|mov|flv|wmv)(\?|$)/i);
          var isHLS = urlLower.includes('.m3u8') || urlLower.includes('.m3u') || urlLower.includes('m3u8');
          var isTS = urlLower.match(/\.ts(\?|$)/i);
+         // If channel declares stream_type explicitly, honor it for .ts live detection.
+         if (ch.stream_type === 'ts' || ch.stream_type === 'mpegts') isTS = true;
          var isHTTPDirect = !isDash && !isMP4 && !isHLS && !isTS && /^https?:\/\/[^\s]+$/i.test(ch.url);
          if (!isDash && !isMP4 && !isHLS && !isTS && !isHTTPDirect) {
             isHLS = true;
+         }
+         // HTTP-protocol stream → route through Cloudflare Worker proxy so browsers
+         // don't block it as mixed-content. Also proxy when channel requires a
+         // specific Referer / User-Agent header the origin expects.
+         var _needsProxy = shouldProxyStream(ch.url, ch);
+         var _effectiveUrl = _needsProxy ? buildProxiedUrl(ch.url, ch) : ch.url;
+         var _effectiveUrlLower = _effectiveUrl.toLowerCase();
+         // Re-evaluate flags against effective URL (proxy URL stays https, but
+         // extension detection still works since the original URL is in the query).
+         if (_needsProxy) {
+            // keep isDash/isHLS/isTS based on original ch.url extension
+            console.log('[Proxy] Routing stream through Cloudflare Worker:', ch.url, '→', _effectiveUrl.substring(0, 100) + '...');
          }
          (function checkStreamHTTP() {
             try {
@@ -6200,7 +6330,7 @@
             });
          }
          if (isMP4) {
-            videoPlayer.src = ch.url;
+            videoPlayer.src = _effectiveUrl;
             videoPlayer.addEventListener("loadedmetadata", function() {
                if (window._streamLoadTimeout) {
                   clearTimeout(window._streamLoadTimeout);
@@ -6233,7 +6363,7 @@
                   window._mpegtsPlayer = mpegts.createPlayer({
                      type: 'mpegts',
                      isLive: true,
-                     url: ch.url
+                     url: _effectiveUrl
                   }, {
                      enableStashBuffer: false,
                      stashInitialSize: 128,
@@ -6299,7 +6429,7 @@
                   }, { once: true });
                } catch (eMtsCreate) {
                   console.log("[mpegts.js] create failed, fallback:", eMtsCreate && eMtsCreate.message);
-                  videoPlayer.src = ch.url;
+                  videoPlayer.src = _effectiveUrl;
                   videoPlayer.addEventListener("loadedmetadata", function() {
                      if (window._streamLoadTimeout) {
                         clearTimeout(window._streamLoadTimeout);
@@ -6314,11 +6444,11 @@
                      });
                   }, { once: true });
                   videoPlayer.addEventListener("error", function() {
-                     tryIframeFallback(ch.url);
+                     tryIframeFallback(_effectiveUrl);
                   }, { once: true });
                }
             } else {
-               videoPlayer.src = ch.url;
+               videoPlayer.src = _effectiveUrl;
                videoPlayer.addEventListener("loadedmetadata", function() {
                   if (window._streamLoadTimeout) {
                      clearTimeout(window._streamLoadTimeout);
@@ -6418,7 +6548,7 @@
                      tryIframeFallback(ch.url);
                   }
                }, 18000);
-               _shakaPlayer.load(ch.url).then(function() {
+               _shakaPlayer.load(_effectiveUrl).then(function() {
                   if (window._streamLoadTimeout) {
                      clearTimeout(window._streamLoadTimeout);
                      window._streamLoadTimeout = null;
@@ -6494,8 +6624,8 @@
                });
             }
          } else if (isHTTPDirect && !isDash && !isHLS) {
-            console.log("[HTTP Direct] Attempting native playback:", ch.url);
-            videoPlayer.src = ch.url;
+            console.log("[HTTP Direct] Attempting native playback:", _effectiveUrl);
+            videoPlayer.src = _effectiveUrl;
             videoPlayer.addEventListener("loadedmetadata", function() {
                if (window._streamLoadTimeout) {
                   clearTimeout(window._streamLoadTimeout);
@@ -6511,16 +6641,16 @@
             }, { once: true });
             videoPlayer.addEventListener("error", function() {
                console.log("[HTTP Direct] Native video failed, trying iframe fallback...");
-               tryIframeFallback(ch.url);
+               tryIframeFallback(_effectiveUrl);
             }, { once: true });
             setTimeout(function() {
                if (!playerLoader.classList.contains('hidden') || videoPlayer.readyState < 2) {
                   console.log("[HTTP Direct] Native video timeout, trying iframe fallback...");
-                  tryIframeFallback(ch.url);
+                  tryIframeFallback(_effectiveUrl);
                }
             }, 5000);
          } else if (videoPlayer.canPlayType("application/vnd.apple.mpegurl")) {
-            videoPlayer.src = ch.url;
+            videoPlayer.src = _effectiveUrl;
             videoPlayer.addEventListener("loadedmetadata", () => {
                if (window._streamLoadTimeout) {
                   clearTimeout(window._streamLoadTimeout);
@@ -7197,6 +7327,18 @@
          sanitized = sanitized.replace(/[\x00-\x1f\x7f]/g, '');
          return sanitized.trim();
       }
+      // Sanitize URL input for M3U/JSON playlist loader. Preserves URL-meaningful
+      // characters like : / ? = & # % - _ . ~ that sanitizeSearchInput strips.
+      function sanitizeUrlInput(input) {
+         if (typeof input !== 'string') return '';
+         // Remove only HTML/JS-injection dangerous chars; keep URL syntax.
+         var sanitized = input.replace(/[<>"'`]/g, '');
+         // Strip control chars.
+         sanitized = sanitized.replace(/[\x00-\x1f\x7f]/g, '');
+         // Block javascript: / data: / vbscript: protocol injection.
+         if (/^\s*(javascript|data|vbscript|file):/i.test(sanitized)) return '';
+         return sanitized.trim();
+      }
       var _globalSearchCache = null;
       var _globalSearchLoading = false;
       async function getGlobalChannelList() {
@@ -7426,7 +7568,7 @@
       });
       document.getElementById("loadM3uBtn").addEventListener("click", () => {
          const rawUrl = document.getElementById("customM3uInput").value.trim();
-         const url = sanitizeSearchInput(rawUrl);
+         const url = sanitizeUrlInput(rawUrl);
          if (url) loadCustomM3U(url);
       });
       document.getElementById("localM3uBtn").addEventListener("click", function() {
@@ -7447,7 +7589,7 @@
       document.getElementById("customM3uInput").addEventListener("keydown", e => {
          if (e.key === "Enter") {
             const rawUrl = e.target.value.trim();
-            const url = sanitizeSearchInput(rawUrl);
+            const url = sanitizeUrlInput(rawUrl);
             if (url) loadCustomM3U(url)
          }
       });

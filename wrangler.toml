@@ -1,0 +1,26 @@
+name = "ai-multitools"
+main = "worker/index.js"
+compatibility_date = "2024-11-01"
+workers_dev = true
+
+# Optional: set allowed hosts (comma separated). Leave commented to allow any.
+# [vars]
+# ALLOWED_HOSTS = "example.com,example.net"
+# PROXY_TOKEN = "your-secret-token-here"
+# RATE_LIMIT_MAX = "120"
+# RATE_LIMIT_WINDOW_SEC = "60"
+
+# Optional: KV namespace for rate limiting.
+# Create one with: npx wrangler kv namespace create RATE_LIMIT_KV
+# Then paste the id below and uncomment.
+# [[kv_namespaces]]
+# binding = "RATE_LIMIT_KV"
+# id = "your-kv-namespace-id"
+
+# Routes / custom domain:
+# After deploy, the worker will be available at:
+#   https://ai-multitools.<your-subdomain>.workers.dev
+# To set a custom route on a domain managed by Cloudflare, add:
+# [[routes]]
+# pattern = "proxy.your-domain.com/*"
+# custom_domain = true
