@@ -4715,34 +4715,68 @@
       var _frontendM3UCache = {};
       var _frontendLoaded = false;
       function parseJSONPlaylist(text, category) {
+         var channels = [];
+         var strictParsed = false;
          try {
             var data = JSON.parse(text);
-            if (!data) return [];
-            var arr = Array.isArray(data) ? data : (data.channels || data.items || data.list || []);
-            var channels = [];
-            arr.forEach(function(item) {
-               if (!item || typeof item !== 'object') return;
-               var name = (item.name || item.title || '').toString().trim();
-               var url = (item.url || item.stream_url || item.src || '').toString().trim();
-               if (!name || !url) return;
-               var ch = {
-                  name: name,
-                  url: url,
-                  logo: item.logo || item.tvg_logo || '',
-                  group: category || item.group || item.category || 'General'
-               };
-               if (item.kid) ch.kid = item.kid;
-               if (item.key) ch.key = item.key;
-               if (item.type) ch.stream_type = item.type;
-               if (item.media_data) ch.media_data = item.media_data;
-               if (item.media_mime) ch.media_mime = item.media_mime;
-               channels.push(ch);
-            });
-            return channels;
+            if (data) {
+               var arr = Array.isArray(data) ? data : (data.channels || data.items || data.list || []);
+               arr.forEach(function(item) {
+                  if (!item || typeof item !== 'object') return;
+                  var name = (item.name || item.title || '').toString().trim();
+                  var url = (item.url || item.stream_url || item.src || '').toString().trim();
+                  if (!name || !url) return;
+                  var ch = {
+                     name: name,
+                     url: url,
+                     logo: item.logo || item.tvg_logo || '',
+                     group: category || item.group || item.category || 'General'
+                  };
+                  if (item.kid) ch.kid = item.kid;
+                  if (item.key) ch.key = item.key;
+                  if (item.type) ch.stream_type = item.type;
+                  if (item.media_data) ch.media_data = item.media_data;
+                  if (item.media_mime) ch.media_mime = item.media_mime;
+                  channels.push(ch);
+               });
+               strictParsed = true;
+            }
          } catch (e) {
-            console.warn("[Frontend] JSON parse error for", category, e);
-            return [];
+            console.warn("[Frontend] Strict JSON parse failed for", category + ", trying lenient parser:", e && e.message);
          }
+         if (strictParsed) return channels;
+
+         channels = [];
+         try {
+            var blockRegex = /\{[^{}]*\}/g;
+            var match;
+            while ((match = blockRegex.exec(text)) !== null) {
+               var block = match[0];
+               var nameMatch = block.match(/\bname\s*:\s*["']([^"']*)["']/i);
+               var urlMatch = block.match(/\burl\s*:\s*["']([^"']*)["']/i);
+               if (!nameMatch || !urlMatch) continue;
+               var ch = {
+                  name: nameMatch[1].trim(),
+                  url: urlMatch[1].trim(),
+                  logo: '',
+                  group: category || 'General'
+               };
+               var kidMatch = block.match(/\bkid\s*:\s*["']([^"']*)["']/i);
+               var keyMatch = block.match(/\bkey\s*:\s*["']([^"']*)["']/i);
+               var typeMatch = block.match(/\btype\s*:\s*["']([^"']*)["']/i);
+               var logoMatch = block.match(/\blogo\s*:\s*["']([^"']*)["']/i);
+               var groupMatch = block.match(/\bgroup\s*:\s*["']([^"']*)["']/i);
+               if (kidMatch) ch.kid = kidMatch[1].trim();
+               if (keyMatch) ch.key = keyMatch[1].trim();
+               if (typeMatch) ch.stream_type = typeMatch[1].trim();
+               if (logoMatch) ch.logo = logoMatch[1].trim();
+               if (groupMatch) ch.group = groupMatch[1].trim();
+               channels.push(ch);
+            }
+         } catch (eLenient) {
+            console.warn("[Frontend] Lenient JSON parse also failed for", category, eLenient && eLenient.message);
+         }
+         return channels;
       }
       async function fetchFrontendM3U(category) {
          if (!FRONTEND_ENABLED) return [];
