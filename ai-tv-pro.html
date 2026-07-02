@@ -603,55 +603,6 @@
          .card-animate .card-inner h4 {
             font-size: 11px !important;
          }
-         /* Fixed horizontal category bar — below player, above channel grid */
-         #fixedCategoryBar {
-            display: flex;
-            gap: 8px;
-            overflow-x: auto;
-            overflow-y: hidden;
-            padding: 8px 12px;
-            background: linear-gradient(to bottom, #0a0a0a, #050505);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-            border-top: 1px solid rgba(0, 243, 255, 0.1);
-            position: sticky;
-            top: 0;
-            z-index: 20;
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-            flex-shrink: 0;
-            scroll-behavior: smooth;
-            -webkit-overflow-scrolling: touch;
-         }
-         #fixedCategoryBar::-webkit-scrollbar { display: none; }
-         #fixedCategoryBar .cat-chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 14px;
-            background: #111;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 999px;
-            color: #aaa;
-            font-size: 11px;
-            font-weight: 600;
-            white-space: nowrap;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            flex-shrink: 0;
-         }
-         #fixedCategoryBar .cat-chip:hover {
-            background: #1a1a1a;
-            color: #fff;
-         }
-         #fixedCategoryBar .cat-chip.active {
-            background: linear-gradient(135deg, rgba(0, 243, 255, 0.2), rgba(255, 0, 85, 0.2));
-            border-color: rgba(0, 243, 255, 0.5);
-            color: #00f3ff;
-            box-shadow: 0 0 12px rgba(0, 243, 255, 0.2);
-         }
-         #fixedCategoryBar .cat-chip i {
-            font-size: 10px;
-         }
          /* Home banner ad */
          .home-banner-ad {
             margin: 0 0 16px 0;
@@ -669,6 +620,102 @@
          #channelPanel .pb-16 {
             padding-bottom: 1rem !important;
          }
+      }
+      /* Proxy toggle button in header (outside media query — works on all sizes) */
+      #proxyToggleBtn .proxy-toggle-state {
+         display: inline-flex;
+         align-items: center;
+         justify-content: center;
+         min-width: 28px;
+         height: 16px;
+         padding: 0 6px;
+         border-radius: 8px;
+         font-size: 9px;
+         font-weight: 700;
+         letter-spacing: 0.5px;
+         background: rgba(100, 100, 100, 0.3);
+         color: #888;
+         transition: all 0.15s ease;
+      }
+      #proxyToggleBtn.proxy-on {
+         background: linear-gradient(135deg, rgba(0, 243, 255, 0.15), rgba(255, 0, 85, 0.1)) !important;
+         border-color: rgba(0, 243, 255, 0.5) !important;
+         color: #00f3ff !important;
+         box-shadow: 0 0 10px rgba(0, 243, 255, 0.15);
+      }
+      #proxyToggleBtn.proxy-on .proxy-toggle-state {
+         background: rgba(0, 243, 255, 0.3);
+         color: #00f3ff;
+      }
+      @media (max-width: 640px) {
+         #proxyToggleBtn .proxy-toggle-label { display: none; }
+         #proxyToggleBtn { padding: 6px 10px; }
+      }
+      /* Fixed horizontal category bar (outside media query — works on all sizes) */
+      #fixedCategoryBar {
+         display: flex;
+         gap: 8px;
+         overflow-x: auto;
+         overflow-y: hidden;
+         padding: 8px 12px;
+         background: linear-gradient(to bottom, #0a0a0a, #050505);
+         border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+         border-top: 1px solid rgba(0, 243, 255, 0.1);
+         position: sticky;
+         top: 0;
+         z-index: 20;
+         scrollbar-width: none;
+         -ms-overflow-style: none;
+         flex-shrink: 0;
+         scroll-behavior: smooth;
+         -webkit-overflow-scrolling: touch;
+         margin: -16px -16px 12px -16px;
+         width: calc(100% + 32px);
+      }
+      #fixedCategoryBar.hidden { display: none !important; }
+      #fixedCategoryBar::-webkit-scrollbar { display: none; }
+      #fixedCategoryBar .cat-chip {
+         display: inline-flex;
+         align-items: center;
+         gap: 6px;
+         padding: 6px 14px;
+         background: #111;
+         border: 1px solid rgba(255, 255, 255, 0.08);
+         border-radius: 999px;
+         color: #aaa;
+         font-size: 11px;
+         font-weight: 600;
+         white-space: nowrap;
+         cursor: pointer;
+         transition: all 0.15s ease;
+         flex-shrink: 0;
+      }
+      #fixedCategoryBar .cat-chip:hover {
+         background: #1a1a1a;
+         color: #fff;
+      }
+      #fixedCategoryBar .cat-chip.active {
+         background: linear-gradient(135deg, rgba(0, 243, 255, 0.2), rgba(255, 0, 85, 0.2));
+         border-color: rgba(0, 243, 255, 0.5);
+         color: #00f3ff;
+         box-shadow: 0 0 12px rgba(0, 243, 255, 0.2);
+      }
+      #fixedCategoryBar .cat-chip i {
+         font-size: 10px;
+      }
+      /* Home banner ad (outside media query) */
+      .home-banner-ad {
+         margin: 0 0 16px 0;
+         min-height: 0;
+      }
+      .home-banner-ad:empty {
+         display: none;
+      }
+      .home-banner-ad img {
+         max-width: 100%;
+         height: auto;
+         border-radius: 12px;
+         display: block;
       }
       @media (min-width: 1280px) {
          #channelPanel {
@@ -3138,10 +3185,16 @@
    </div>
    <header class="bg-black/90 backdrop-blur-md border-b border-white/10 sticky top-0 z-50 h-16 flex-shrink-0">
       <div class="container mx-auto px-4 h-full flex items-center justify-between">
-         <div class="flex items-center gap-3"><button id="proxyToggleBtn" class="flex items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 transition text-gray-400 hover:text-cyan-400" title="Toggle Proxy (All Streams)"><i class="fas fa-shield-alt text-sm"></i></button><i class="fas fa-tv text-cyan-400 text-xl"></i>
+         <div class="flex items-center gap-3"><i class="fas fa-tv text-cyan-400 text-xl"></i>
             <h1 class="text-sm brand-font font-bold text-white tracking-wider">AI TV <span class="text-cyan-400">PRO</span></h1>
          </div>
-         <div class="flex items-center gap-3"><button class="sm:hidden text-gray-400 hover:text-white transition" id="mobileSearchBtn"><i class="fas fa-search text-sm"></i></button>
+         <div class="flex items-center gap-3">
+            <button id="proxyToggleBtn" class="flex items-center gap-2 bg-[#111] hover:bg-[#222] border border-white/10 px-3 py-1.5 rounded-full text-xs font-bold text-gray-300 transition" title="Toggle Proxy (All Streams)">
+               <i class="fas fa-shield-alt text-sm"></i>
+               <span class="proxy-toggle-label">Proxy</span>
+               <span class="proxy-toggle-state" id="proxyToggleState">OFF</span>
+            </button>
+            <button class="sm:hidden text-gray-400 hover:text-white transition" id="mobileSearchBtn"><i class="fas fa-search text-sm"></i></button>
             <div class="relative hidden sm:block"><input class="bg-[#111] border border-white/10 rounded-full py-1.5 pl-8 pr-4 text-xs text-white focus:border-cyan-500/50 focus:outline-none w-32 focus:w-48 transition-all" id="searchInput" placeholder="Search..." type="text" /><i class="fas fa-search absolute left-3 top-2 text-gray-500"></i></div>
             <div class="relative"><button class="flex items-center gap-2 bg-[#111] hover:bg-[#222] border border-white/10 px-3 py-1.5 rounded text-xs font-bold text-gray-300 transition" id="regionBtn"><i class="fas fa-globe text-pink-500"></i><span id="selectedRegion">Bangladesh</span><i class="fas fa-chevron-down text-[10px]"></i></button>
                <div class="absolute right-0 top-full mt-2 w-64 bg-[#0a0a0a] border border-white/10 rounded shadow-2xl z-50 max-h-96 overflow-y-auto smooth-dropdown" id="regionDropdown">
@@ -3536,10 +3589,10 @@
          </div>
       </div>
       </div>
-      <div id="fixedCategoryBar" class="hidden">
-         <!-- Populated dynamically by renderFixedCategoryBar() -->
-      </div>
       <div class="flex-1 min-h-0 overflow-y-auto p-4 pb-16" id="channelPanel">
+         <div id="fixedCategoryBar" class="hidden">
+            <!-- Populated dynamically by renderFixedCategoryBar() -->
+         </div>
          <div class="container mx-auto">
             <div class="hidden" id="topBannerAd"></div>
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 pb-2" id="channelGrid"></div><button id="loadMoreBtn" tabindex="0"><span class="btn-text">Load More Channels</span><span class="btn-loader"><svg height="20" style="animation:channelSvgSpin 1.2s linear infinite" viewbox="0 0 50 50" width="20" xmlns="http://www.w3.org/2000/svg">
@@ -5989,7 +6042,7 @@
             chip.innerHTML = '<i class="fas ' + _getCatIcon(cat) + '"></i><span>' + cat + '</span>';
             chip.onclick = function(e) {
                e.stopPropagation();
-               if (window._hapticVibration) { try { navigator.vibrate(8); } catch (e2) {} }
+               if (typeof window.haptic === 'function') { window.haptic(8); }
                // Trigger the underlying category button click
                var catBtns = document.querySelectorAll("#categoryList .cat-btn");
                catBtns.forEach(function(b) {
@@ -6412,15 +6465,26 @@
             var ifr = document.getElementById("iframePlayer");
             if (!ifr) return;
             var urlLow = (url || '').toLowerCase();
-            var isMpdUrl = urlLow.indexOf('.mpd') !== -1 || urlLow.indexOf('format=mpd') !== -1;
-            var isM3u8Url = urlLow.indexOf('.m3u8') !== -1 || urlLow.indexOf('.m3u') !== -1;
-            var isTsUrl = /\.ts(\?|$)/i.test(url);
-            if (isMpdUrl || isM3u8Url || isTsUrl) {
-               console.log("[Iframe Fallback] Skipping iframe for stream URL type (mpd/m3u8/ts) - would cause download. Showing offline state.");
+            // Detect stream URL types that would cause browser download prompt
+            // or render raw JSON error responses as HTML.
+            var isMpdUrl = urlLow.indexOf('.mpd') !== -1 || urlLow.indexOf('format=mpd') !== -1 || urlLow.indexOf('/dash/') !== -1;
+            var isM3u8Url = urlLow.indexOf('.m3u8') !== -1 || urlLow.indexOf('.m3u') !== -1 || urlLow.indexOf('mpegurl') !== -1;
+            var isTsUrl = /\.ts(\?|$)/i.test(url) || urlLow.indexOf('extension=ts') !== -1;
+            var isLivePlayUrl = urlLow.indexOf('/live/play/') !== -1 || urlLow.indexOf('/live/stream') !== -1;
+            var isProxyUrl = urlLow.indexOf(STREAM_PROXY_BASE.toLowerCase()) === 0;
+            // If it's a stream URL (mpd/m3u8/ts/live/proxy), do NOT use iframe — show
+            // 'Stream Offline' instead. The iframe would either download the file or
+            // render the proxy's JSON error response as visible text.
+            if (isMpdUrl || isM3u8Url || isTsUrl || isLivePlayUrl || isProxyUrl) {
+               console.log("[Iframe Fallback] Skipping iframe for stream URL type — showing 'Stream Offline'.");
                if (window._streamLoadTimeout) {
                   clearTimeout(window._streamLoadTimeout);
                   window._streamLoadTimeout = null;
                }
+               // Make sure iframe is hidden (so it doesn't show stale content or JSON)
+               ifr.style.display = "none";
+               ifr.src = "";
+               videoPlayer.style.display = "block";
                playerLoader.classList.remove("hidden");
                playerLoader.classList.add("loader-offline");
                playerStatusText.innerText = "Stream Offline";
@@ -8153,28 +8217,49 @@
       })();
       // Haptic vibration toggle (default: ON)
       window._hapticVibration = (localStorage.getItem('aitv_haptic') !== 'off'); // default ON
+      // Helper: trigger vibration if enabled. Many browsers require a user gesture
+      // AND a secure context (HTTPS). We wrap it in try/catch + check for navigator.vibrate.
+      function haptic(ms) {
+         if (!window._hapticVibration) return;
+         try {
+            if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+               navigator.vibrate(ms);
+            } else if (typeof navigator !== 'undefined' && navigator.vibrate) {
+               // Older API style
+               navigator.vibrate(ms);
+            }
+         } catch (e) {
+            // Vibration API may be blocked on insecure origins — silent fail.
+         }
+      }
+      // Expose globally so other modules can call haptic(15) without checking _hapticVibration
+      window.haptic = haptic;
       (function() {
          var cb = document.getElementById('hapticCheckbox');
          if (cb) cb.checked = window._hapticVibration;
       })();
-      function toggleHaptic() {
-         window._hapticVibration = !window._hapticVibration;
+      function setHapticState(newState) {
+         window._hapticVibration = !!newState;
          localStorage.setItem('aitv_haptic', window._hapticVibration ? 'on' : 'off');
          var cb = document.getElementById('hapticCheckbox');
          if (cb) cb.checked = window._hapticVibration;
+         // Vibrate when turning ON (as confirmation)
          if (window._hapticVibration) {
-            try { navigator.vibrate(20); } catch (e) {}
+            haptic(25);
          }
          showToast(window._hapticVibration ? 'Haptic Vibration ON' : 'Haptic Vibration OFF');
+      }
+      function toggleHaptic() {
+         setHapticState(!window._hapticVibration);
       }
       document.getElementById('hapticToggleRow').addEventListener('click', function(e) {
          if (e.target === document.getElementById('hapticCheckbox')) return;
          e.stopPropagation();
          toggleHaptic();
       });
-      document.getElementById('hapticCheckbox').addEventListener('change', function(e) {
-         toggleHaptic();
-      });
+      // Note: do NOT add a separate 'change' listener — the row click handler already
+      // toggles the checkbox visually via .tv-toggle-switch CSS, and calling toggleHaptic()
+      // here would double-flip the state.
       var _isHomePage = true;
       var proxyToggleBtn = document.getElementById("proxyToggleBtn");
       // Proxy-all toggle: when ON, ALL streams (HTTP + HTTPS) get proxied.
@@ -8182,24 +8267,23 @@
       window._forceProxyAll = (localStorage.getItem('aitv_force_proxy') === 'on');
       function applyProxyToggleVisual() {
          if (!proxyToggleBtn) return;
+         var stateLabel = document.getElementById('proxyToggleState');
          if (window._forceProxyAll) {
-            proxyToggleBtn.classList.add('bg-cyan-500/20');
-            proxyToggleBtn.classList.add('border-cyan-400');
-            proxyToggleBtn.classList.add('text-cyan-400');
+            proxyToggleBtn.classList.add('proxy-on');
             proxyToggleBtn.title = 'Proxy: ON (All streams routed through Worker)';
+            if (stateLabel) stateLabel.textContent = 'ON';
          } else {
-            proxyToggleBtn.classList.remove('bg-cyan-500/20');
-            proxyToggleBtn.classList.remove('border-cyan-400');
-            proxyToggleBtn.classList.remove('text-cyan-400');
+            proxyToggleBtn.classList.remove('proxy-on');
             proxyToggleBtn.title = 'Proxy: OFF (Only HTTP/BDIX routed)';
+            if (stateLabel) stateLabel.textContent = 'OFF';
          }
       }
       function toggleProxyAll() {
          window._forceProxyAll = !window._forceProxyAll;
          localStorage.setItem('aitv_force_proxy', window._forceProxyAll ? 'on' : 'off');
          applyProxyToggleVisual();
-         if (window._hapticVibration) {
-            try { navigator.vibrate(15); } catch (e) {}
+         if (typeof window.haptic === 'function') {
+            window.haptic(15);
          }
          showToast(window._forceProxyAll ? 'Proxy ON — All streams routed' : 'Proxy OFF — HTTP/BDIX only');
       }
