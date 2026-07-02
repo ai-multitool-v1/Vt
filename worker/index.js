@@ -95,6 +95,28 @@ export default {
   async fetch(request, env, ctx) {
     const startedAt = Date.now();
     const reqUrl = new URL(request.url);
+    // HTTPS Only
+if (request.headers.get("X-Forwarded-Proto") !== "https") {
+  return jsonResponse(
+    { ok: false, message: "HTTPS required" },
+    403
+  );
+}
+
+// Allowed Origin
+const allowedOrigins = [
+  "https://ai-multitool.pages.dev/aitools/ai-tv-pro",
+  "/"
+];
+
+const origin = request.headers.get("Origin");
+
+if (origin && !allowedOrigins.includes(origin)) {
+  return jsonResponse(
+    { ok: false, message: "Forbidden" },
+    403
+  );
+}
 
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
