@@ -1,4 +1,4 @@
-# AI TV Pro — VLC-স্টাইল IPTV / Live TV Player
+#AI TV Pro — VLC-স্টাইল IPTV / Live TV Player
 
 একটি সিঙ্গেল-ফাইল HTML প্লেয়ার যা VLC Player-এর মতো শক্তিশালী — HLS (`.m3u8`), DASH (`.mpd` + DRM ClearKey), MPEG-TS (`.ts`) এবং MP4 স্ট্রিম প্লে করতে পারে। Shaka Player ও mpegts.js ব্যবহার করে তৈরি, Cloudflare Worker প্রক্সি দিয়ে HTTP/HTTPS সব স্ট্রিম প্রক্সি করা যায়, BDIX সার্ভার সাপোর্ট করে, এবং M3U ফাইলের যেকোনো content tag (session, token, signature, cookie, headers) execute করে।
 
