@@ -101,7 +101,7 @@ export default {
     }
 
     if (!["GET", "HEAD"].includes(request.method)) {
-      return jsonResponse({ ok: false, message: "Only GET/HEAD are supported" }, 405);
+      return jsonResponse({ ok: false, message: "access denied" }, 405);
     }
 
     let targetUrl;
@@ -111,7 +111,7 @@ export default {
       const rawTarget = reqUrl.searchParams.get("url");
       if (!rawTarget) {
         return jsonResponse(
-          { ok: false, message: "Missing 'url' param. Usage: /?url=<encoded target>" },
+          { ok: false, message: "internal server error, server not connected!" },
           400
         );
       }
@@ -124,14 +124,14 @@ export default {
       logCtx.target = targetUrl.toString();
 
       if (!["http:", "https:"].includes(targetUrl.protocol)) {
-        return jsonResponse({ ok: false, message: "Only http/https targets allowed" }, 400);
+        return jsonResponse({ ok: false, message: "error" }, 400);
       }
 
       // ---- Security: token auth ----
       if (env.PROXY_TOKEN) {
         const token = reqUrl.searchParams.get("token");
         if (token !== env.PROXY_TOKEN) {
-          return jsonResponse({ ok: false, message: "Invalid or missing token" }, 401);
+          return jsonResponse({ ok: false, message: " বাল পাকনামু চুদাও👽🤣" }, 401);
         }
       }
 
@@ -160,6 +160,10 @@ export default {
         ref: reqUrl.searchParams.get("ref"),
         origin: reqUrl.searchParams.get("origin"),
         ua: reqUrl.searchParams.get("ua"),
+        // VLC-like per-channel HTTP options forwarded to upstream origin
+        cookie: reqUrl.searchParams.get("cookie"),
+        // Custom HTTP headers, semicolon-separated "Name: value" pairs
+        headers: reqUrl.searchParams.get("headers"),
       };
 
       const cache = caches.default;
@@ -331,6 +335,39 @@ function buildUpstreamHeaders(request, extraParams) {
   );
   if (extraParams.ref) headers.set("Referer", decodeURIComponent(extraParams.ref));
   if (extraParams.origin) headers.set("Origin", decodeURIComponent(extraParams.origin));
+
+  // VLC-like per-channel cookie (from #EXTVLCOPT:http-cookie=...).
+  // If client also sent a Cookie header, we merge them.
+  if (extraParams.cookie) {
+    const decodedCookie = decodeURIComponent(extraParams.cookie);
+    const existingCookie = headers.get("Cookie") || "";
+    headers.set("Cookie", existingCookie ? existingCookie + "; " + decodedCookie : decodedCookie);
+  }
+
+  // Generic custom HTTP headers, semicolon-separated "Name: value" pairs.
+  // Lets M3U files declare arbitrary headers like X-Session, X-Signature,
+  // Authorization, etc. via #EXTVLCOPT:http-header=Name: value
+  if (extraParams.headers) {
+    const decodedHeaders = decodeURIComponent(extraParams.headers);
+    // Split on semicolons but be lenient about values containing colons.
+    // Each entry MUST be "Header-Name: value" (colon is the separator).
+    // To allow multiple headers, separate with ";;" (double semicolon).
+    const headerEntries = decodedHeaders.split(/;;|;\s*(?=[A-Za-z][\w-]*:)/);
+    for (const entry of headerEntries) {
+      const trimmed = entry.trim();
+      if (!trimmed) continue;
+      const colonIdx = trimmed.indexOf(":");
+      if (colonIdx <= 0) continue;
+      const hdrName = trimmed.substring(0, colonIdx).trim();
+      const hdrVal = trimmed.substring(colonIdx + 1).trim();
+      if (hdrName) {
+        // Skip headers that would break the request or are security-sensitive
+        const lower = hdrName.toLowerCase();
+        if (lower === "host" || lower === "content-length" || lower === "connection") continue;
+        headers.set(hdrName, hdrVal);
+      }
+    }
+  }
 
   return headers;
 }

@@ -4901,9 +4901,35 @@
       let isFloating = false;
       let currentPlaylistSource = "default";
       var bfModeEnabled = (localStorage.getItem('aitv_bf_mode') === 'on');
-      // Cloudflare Worker proxy for HTTP-protocol streams (and mixed-content scenarios).
-      // Deployed via wrangler; see worker/index.js and wrangler.toml.
+      // Cloudflare Worker proxy for ALL streams (HTTP and HTTPS) — VLC-like behavior.
+      // YouTube iframe channels from admin are NOT proxied (direct fetch).
+      // BDIX private IP ranges (10.x, 172.16-31.x, 192.168.x) are also proxied.
       var STREAM_PROXY_BASE = 'https://vt.ai-multitools.workers.dev/';
+      function _isYouTubeUrl(url) {
+         if (!url) return false;
+         return /(?:youtube\.com\/(?:watch\?v=|embed\/|live\/)|youtu\.be\/)/i.test(url);
+      }
+      function _isBDIXUrl(url) {
+         if (!url) return false;
+         var m = url.match(/^https?:\/\/([^\/:]+)/i);
+         if (!m) return false;
+         var host = m[1];
+         // IPv4 private ranges used by BDIX servers in Bangladesh
+         var ipMatch = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+         if (ipMatch) {
+            var o1 = parseInt(ipMatch[1], 10);
+            var o2 = parseInt(ipMatch[2], 10);
+            if (o1 === 10) return true;                       // 10.0.0.0/8
+            if (o1 === 172 && o2 >= 16 && o2 <= 31) return true; // 172.16.0.0/12
+            if (o1 === 192 && o2 === 168) return true;        // 192.168.0.0/16
+            if (o1 === 127) return true;                       // loopback
+            if (o1 === 100 && o2 >= 64 && o2 <= 127) return true; // CGNAT 100.64/10
+         }
+         // Common BDIX hostnames
+         if (/\.(bd|local|lan|internal)$/i.test(host)) return true;
+         if (/^(server|ftp|media|iptv|tv|stream|live|disney|netflix|prime|hotstar|hoichoi|chorki|bongo)/i.test(host)) return true;
+         return false;
+      }
       function buildProxiedUrl(originalUrl, ch) {
          if (!originalUrl) return originalUrl;
          // Already proxied? don't double-wrap.
@@ -4911,14 +4937,39 @@
          var qs = '?url=' + encodeURIComponent(originalUrl);
          if (ch && ch.user_agent) qs += '&ua=' + encodeURIComponent(ch.user_agent);
          if (ch && ch.referer) qs += '&ref=' + encodeURIComponent(ch.referer);
+         if (ch && ch.origin_header) qs += '&origin=' + encodeURIComponent(ch.origin_header);
+         // Cookie from #EXTVLCOPT:http-cookie=...
+         if (ch && ch.http_cookie) qs += '&cookie=' + encodeURIComponent(ch.http_cookie);
+         else if (ch && ch.cookie) qs += '&cookie=' + encodeURIComponent(ch.cookie);
+         // Generic custom headers (semicolon-separated "Header-Name: value" pairs)
+         if (ch && ch.http_headers) qs += '&headers=' + encodeURIComponent(ch.http_headers);
+         // Session / signature / token forwarded as extra custom headers
+         var extraHeaders = [];
+         if (ch && ch.session) extraHeaders.push('X-Session: ' + ch.session);
+         if (ch && ch.signature) extraHeaders.push('X-Signature: ' + ch.signature);
+         if (ch && ch.token && !ch.http_cookie) extraHeaders.push('X-Token: ' + ch.token);
+         if (extraHeaders.length > 0) {
+            qs += '&headers=' + encodeURIComponent(extraHeaders.join(';'));
+         }
          return STREAM_PROXY_BASE + qs;
       }
       function shouldProxyStream(url, ch) {
          if (!url) return false;
-         // Always proxy http:// (insecure) streams since browsers block mixed-content.
+         // NEVER proxy YouTube iframe streams from admin — they need YouTube's embed player.
+         if (_isYouTubeUrl(url)) return false;
+         // NEVER proxy iframe/stream_type=iframe channels (they go into <iframe> directly)
+         if (ch && (ch.stream_type === 'iframe' || ch.type === 'iframe')) return false;
+         // NEVER proxy uploaded media (base64 blob data)
+         if (ch && (ch.stream_type === 'upload' || ch.media_data)) return false;
+         // PROXY: HTTP (insecure), HTTPS with referer/user-agent/cookie (origin expects them),
+         // BDIX private IP servers, anything with session/token/signature custom headers.
          if (/^http:\/\//i.test(url)) return true;
-         // Optionally proxy when channel declares a referer/user-agent the origin expects.
-         if (ch && (ch.referer || ch.user_agent)) return true;
+         if (ch && (ch.referer || ch.user_agent || ch.http_cookie || ch.cookie)) return true;
+         if (ch && (ch.session || ch.signature || ch.http_headers)) return true;
+         if (_isBDIXUrl(url)) return true;
+         // Default: also proxy HTTPS streams for VLC-like consistent behavior.
+         // The worker adds CORS headers + correct content-types so playback is reliable.
+         if (/^https:\/\//i.test(url)) return true;
          return false;
       }
       const playerWrapper = document.getElementById("playerWrapper");
@@ -5148,6 +5199,7 @@
             'k_session': 'k_session',
             'session': 'session',
             'token': 'token',
+            'signature': 'signature',
             'user-agent': 'user_agent',
             'referer': 'referer',
             'http-referrer': 'referer',
@@ -5155,6 +5207,27 @@
             'stream-type': 'stream_type',
             'type': 'stream_type'
          };
+         function _ensureCurrent() {
+            if (!current.name && !current._raw) {
+               current = { name: '', logo: '', group: 'General' };
+            }
+         }
+         function _setHeader(optKey, optVal) {
+            _ensureCurrent();
+            // Normalize optKey
+            if (optKey === 'http_user_agent') optKey = 'user_agent';
+            else if (optKey === 'http_referrer') optKey = 'referer';
+            else if (optKey === 'http_cookie') optKey = 'http_cookie';
+            else if (optKey === 'http_origin') optKey = 'origin_header';
+            // For VLC-style #EXTVLCOPT:http-header=Name: Value
+            // accumulate all such headers into a single http_headers string
+            if (optKey === 'http_header') {
+               if (!current.http_headers) current.http_headers = optVal;
+               else current.http_headers += '; ' + optVal;
+            } else {
+               current[optKey] = optVal;
+            }
+         }
          for (let line of lines) {
             line = (line || "").trim();
             if (!line) continue;
@@ -5190,21 +5263,47 @@
                if (line.startsWith("#EXTGRP:")) {
                   var grp = line.substring("#EXTGRP:".length).trim();
                   if (grp) {
-                     if (!current.name) current = { name: '', logo: '', group: 'General' };
+                     _ensureCurrent();
                      current.group = grp;
                   }
                }
-               // Honor #EXTVLCOPT: declarations (http-user-agent, http-referrer, etc.)
-               if (line.startsWith("#EXTVLCOPT:")) {
-                  var opt = line.substring("#EXTVLCOPT:".length).trim();
-                  var eqIdx = opt.indexOf("=");
-                  if (eqIdx > 0) {
-                     var optKey = opt.substring(0, eqIdx).trim().toLowerCase().replace(/-/g, '_');
-                     var optVal = opt.substring(eqIdx + 1).trim();
-                     if (optKey === 'http_user_agent') optKey = 'user_agent';
-                     if (optKey === 'http_referrer') optKey = 'referer';
-                     if (!current.name) current = { name: '', logo: '', group: 'General' };
-                     current[optKey] = optVal;
+               continue;
+            }
+            // #EXTVLCOPT:key=value (VLC-style per-channel HTTP options).
+            // Examples: http-user-agent, http-referrer, http-cookie, http-origin,
+            // http-header (custom header), session, signature, token.
+            if (line.startsWith("#EXTVLCOPT:")) {
+               var opt = line.substring("#EXTVLCOPT:".length).trim();
+               var eqIdx = opt.indexOf("=");
+               if (eqIdx > 0) {
+                  var optKey = opt.substring(0, eqIdx).trim().toLowerCase().replace(/-/g, '_');
+                  // Take everything AFTER the first = as value (so cookie values like
+                  // "mac=00:1A...; stb_lang=en" are preserved intact).
+                  var optVal = opt.substring(eqIdx + 1).trim();
+                  _setHeader(optKey, optVal);
+               }
+               continue;
+            }
+            // #KODIPROP:name=value (Kodi-style per-channel properties).
+            // Examples: inputstream.adaptive.license_key, inputstream.adaptive.manifest_update_parameter
+            if (line.startsWith("#KODIPROP:")) {
+               var kprop = line.substring("#KODIPROP:".length).trim();
+               var kEq = kprop.indexOf("=");
+               if (kEq > 0) {
+                  var kKey = kprop.substring(0, kEq).trim().toLowerCase().replace(/[.-]/g, '_');
+                  var kVal = kprop.substring(kEq + 1).trim();
+                  _ensureCurrent();
+                  current['kodi_' + kKey] = kVal;
+                  // Honor Kodi DRM ClearKey properties
+                  if (kKey === 'inputstream_adaptive_license_key') {
+                     // Format: "KID:KEY" or just "KEY"
+                     var parts = kVal.split(':');
+                     if (parts.length >= 2) {
+                        current.kid = parts[0];
+                        current.key = parts.slice(1).join(':');
+                     } else if (parts.length === 1) {
+                        current.key = parts[0];
+                     }
                   }
                }
                continue;
