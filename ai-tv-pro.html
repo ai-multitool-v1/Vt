@@ -635,6 +635,23 @@
          }
       }
       /* Proxy toggle button in header (outside media query — works on all sizes) */
+      .header-logo {
+         height: 36px;
+         width: auto;
+         max-width: 140px;
+         object-fit: contain;
+         display: block;
+      }
+      @media (max-width: 640px) {
+         .header-logo {
+            height: 28px;
+            max-width: 100px;
+         }
+      }
+      .worldcup-trophy-icon {
+         color: #facc15;
+         flex-shrink: 0;
+      }
       #proxyToggleBtn .proxy-toggle-state {
          display: inline-flex;
          align-items: center;
@@ -3197,8 +3214,8 @@
    </div>
    <header class="bg-black/90 backdrop-blur-md border-b border-white/10 sticky top-0 z-50 h-16 flex-shrink-0">
       <div class="container mx-auto px-4 h-full flex items-center justify-between">
-         <div class="flex items-center gap-3"><i class="fas fa-tv text-cyan-400 text-xl"></i>
-            <h1 class="text-sm brand-font font-bold text-white tracking-wider">AI TV <span class="text-cyan-400">PRO</span></h1>
+         <div class="flex items-center gap-3">
+            <img src="/logo.svg" alt="AI TV Pro" class="header-logo" onerror="this.style.display='none'">
          </div>
          <div class="flex items-center gap-3">
             <button id="proxyToggleBtn" class="flex items-center gap-2 bg-[#111] hover:bg-[#222] border border-white/10 px-3 py-1.5 rounded-full text-xs font-bold text-gray-300 transition" title="Toggle Proxy (All Streams)">
@@ -3282,7 +3299,12 @@
    <div class="worldcup-overlay" id="worldcupOverlay"></div>
    <div class="worldcup-modal" id="worldcupModal">
       <div class="modal-header">
-         <div class="flex items-center gap-3"><i class="fas fa-trophy text-yellow-400 text-lg"></i>
+         <div class="flex items-center gap-3">
+            <svg version="1.0" xmlns="http://www.w3.org/2000/svg" width="32" height="28" viewBox="0 0 600.000000 530.000000" preserveAspectRatio="xMidYMid meet" class="worldcup-trophy-icon">
+               <g transform="translate(0.000000,530.000000) scale(0.100000,-0.100000)" fill="currentColor" stroke="none">
+                  <path d="M2971 4409 c-406 -79 -709 -473 -676 -876 6 -72 5 -83 -8 -83 -72 0 -29 -192 114 -507 67 -150 99 -214 233 -464 154 -290 181 -542 86 -814 -17 -49 -78 -187 -135 -305 -115 -238 -145 -330 -148 -451 -2 -81 -2 -81 32 -110 162 -135 897 -167 1225 -53 111 38 136 66 136 147 0 121 -34 224 -150 451 -177 348 -212 456 -213 651 0 173 57 333 195 545 255 390 402 820 329 960 -12 23 -21 59 -21 85 0 394 -282 738 -672 820 -75 16 -255 18 -327 4z m217 -61 c27 -27 14 -102 -32 -190 -69 -131 -69 -180 0 -285 39 -61 40 -64 16 -86 -18 -16 -20 -14 -43 34 -14 31 -46 72 -80 103 -70 64 -74 72 -104 206 -13 60 -31 123 -40 139 -8 17 -15 35 -15 40 0 29 272 65 298 39z m189 -33 c106 -33 127 -49 119 -88 -8 -40 -38 -71 -93 -98 -87 -42 -98 -79 -53 -169 35 -70 36 -84 10 -141 -24 -55 -25 -122 -1 -174 23 -50 39 -64 95 -78 33 -9 51 -21 68 -47 19 -29 75 -67 120 -82 5 -2 13 -54 17 -115 9 -119 30 -175 71 -188 29 -9 25 -19 -25 -63 -52 -46 -135 -63 -185 -37 -67 35 -123 139 -168 310 -52 196 -108 251 -182 177 -53 -54 -57 -92 -26 -275 15 -89 29 -168 29 -176 3 -26 -135 -63 -248 -69 -100 -4 -245 24 -245 47 0 15 51 85 93 129 49 50 53 87 28 222 -19 101 -13 120 56 169 55 39 113 110 113 138 0 8 -23 39 -52 69 -42 45 -52 63 -59 105 -16 103 -61 139 -151 120 -69 -14 -116 2 -152 52 l-21 29 60 56 c72 67 201 153 219 146 19 -7 30 -37 66 -169 42 -155 61 -193 116 -227 42 -26 104 -124 104 -164 0 -6 9 -19 20 -29 18 -16 20 -16 54 5 86 53 98 109 42 200 -58 94 -58 118 4 235 46 89 51 104 48 152 -4 64 -3 64 109 28z m273 -161 c240 -227 313 -562 190 -871 -36 -90 -41 -97 -67 -89 -30 10 -40 43 -48 154 -9 126 -17 141 -80 161 -44 14 -53 22 -75 66 -24 48 -27 50 -73 55 -60 7 -79 26 -84 87 -4 37 0 60 16 91 28 54 27 99 -5 157 -33 63 -29 85 21 108 56 26 93 65 107 109 15 50 16 49 98 -28z m-1062 -214 c13 -6 49 -11 80 -10 32 0 68 1 81 2 26 0 41 -16 41 -47 0 -50 24 -102 63 -138 50 -46 44 -68 -33 -124 -112 -82 -120 -107 -84 -264 19 -86 14 -111 -37 -166 -22 -24 -47 -59 -56 -78 -22 -47 -25 -46 -109 40 -197 203 -229 486 -88 774 l46 93 36 -35 c21 -19 48 -40 60 -47z m697 -605 c60 -254 172 -394 304 -378 86 10 110 -43 50 -111 -50 -58 -17 -105 38 -54 53 48 74 122 48 171 -14 26 -13 28 33 71 60 56 113 146 153 258 39 108 47 106 24 -4 -36 -177 -138 -402 -306 -670 -116 -185 -178 -308 -244 -488 -120 -326 -372 -720 -460 -720 -35 0 -203 28 -216 35 -4 3 10 44 32 90 21 47 47 113 56 148 14 49 40 94 125 212 366 510 411 731 287 1389 -21 111 -20 173 3 187 25 16 47 -26 73 -136z m-852 -161 c161 -219 408 -292 689 -204 34 11 64 17 66 15 10 -10 17 -229 11 -312 -16 -188 -99 -389 -269 -647 l-85 -129 -6 119 c-10 198 -55 336 -183 572 -162 298 -304 615 -321 717 -6 40 -6 40 28 -21 18 -34 50 -84 70 -110z m1008 -1458 c11 -39 41 -115 66 -169 26 -53 44 -100 41 -103 -16 -15 -183 -35 -343 -41 l-179 -6 32 39 c115 137 231 311 300 450 l37 75 12 -87 c7 -48 22 -119 34 -158z m-656 -493 c217 -32 623 -21 845 23 25 5 29 1 63 -75 43 -94 44 -99 15 -105 -357 -77 -725 -82 -1072 -16 -54 11 -101 21 -103 23 -2 2 14 43 34 91 l38 88 35 -6 c19 -4 85 -14 145 -23z m-148 -362 c322 -60 717 -57 1031 7 90 19 92 19 92 1 0 -146 -1001 -176 -1227 -37 -33 20 -48 66 -18 55 8 -4 63 -15 122 -26z"/>
+               </g>
+            </svg>
             <h2 class="brand-font text-sm font-bold text-white tracking-wider">WORLD CUP</h2>
          </div><button class="text-gray-400 hover:text-white transition text-lg" id="closeWorldcupBtn"><i class="fas fa-times"></i></button>
       </div>
@@ -6039,9 +6061,34 @@
       function renderFixedCategoryBar(cats) {
          var bar = document.getElementById("fixedCategoryBar");
          if (!bar) return;
-         // Only show the fixed bar when player is visible (i.e. main content shown)
+         // Only show the fixed bar when main content is visible (not on home page).
+         // Even if mainContent is hidden when this is called, we still populate
+         // the bar so it's ready to show when the user switches to Live TV.
          var mc = document.getElementById("mainContent");
          if (!mc || mc.classList.contains("hidden-view")) {
+            // Populate but keep hidden — will be shown when Live TV tab is opened.
+            bar.innerHTML = "";
+            cats.forEach(function(cat) {
+               var chip = document.createElement("button");
+               chip.className = "cat-chip";
+               chip.setAttribute("data-cat", cat);
+               chip.innerHTML = '<i class="fas ' + _getCatIcon(cat) + '"></i><span>' + cat + '</span>';
+               chip.onclick = function(e) {
+                  e.stopPropagation();
+                  if (typeof window.haptic === 'function') { window.haptic(8); }
+                  _filterGridByCategory(cat);
+                  bar.querySelectorAll(".cat-chip").forEach(function(c) { c.classList.remove("active"); });
+                  chip.classList.add("active");
+                  var catBtns = document.querySelectorAll("#categoryList .cat-btn");
+                  catBtns.forEach(function(b) {
+                     if (b.innerText.trim() === cat) b.classList.add("active");
+                     else b.classList.remove("active");
+                  });
+               };
+               bar.appendChild(chip);
+            });
+            var allChip = bar.querySelector('.cat-chip[data-cat="All"]');
+            if (allChip) allChip.classList.add("active");
             bar.classList.add("hidden");
             return;
          }
@@ -6055,25 +6102,17 @@
             chip.onclick = function(e) {
                e.stopPropagation();
                if (typeof window.haptic === 'function') { window.haptic(8); }
-               // Directly filter the channel grid by group category — no dependency
-               // on the category drawer buttons being rendered.
                _filterGridByCategory(cat);
-               // Update active state visually
                bar.querySelectorAll(".cat-chip").forEach(function(c) { c.classList.remove("active"); });
                chip.classList.add("active");
-               // Sync the category drawer buttons too (if rendered)
                var catBtns = document.querySelectorAll("#categoryList .cat-btn");
                catBtns.forEach(function(b) {
-                  if (b.innerText.trim() === cat) {
-                     b.classList.add("active");
-                  } else {
-                     b.classList.remove("active");
-                  }
+                  if (b.innerText.trim() === cat) b.classList.add("active");
+                  else b.classList.remove("active");
                });
             };
             bar.appendChild(chip);
          });
-         // Default: "All" chip is active
          var allChip = bar.querySelector('.cat-chip[data-cat="All"]');
          if (allChip) allChip.classList.add("active");
       }
@@ -8587,6 +8626,16 @@
 
               document.getElementById('homeView').classList.add('hidden-view');
               document.getElementById('mainContent').classList.remove('hidden-view');
+              // Re-render the fixed category bar so group categories show up
+              // when user navigates to Live TV tab (channels may already be loaded).
+              if (typeof renderFixedCategoryBar === 'function' && allChannels.length > 0) {
+                  var cats = new Set(["All"]);
+                  allChannels.forEach(function(c) { cats.add(c.group); });
+                  if (adminCategories && adminCategories.length > 0) {
+                      adminCategories.forEach(function(cat) { cats.add(cat); });
+                  }
+                  renderFixedCategoryBar(Array.from(cats).sort());
+              }
               var _isWideScreen = window.innerWidth >= 1024;
               var _isTvMode = document.body.classList.contains('tv-mode');
               var _isTablet = (function() {
