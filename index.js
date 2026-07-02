@@ -332,9 +332,9 @@ export default {
  *   - + 2 referer fallbacks = 11 fetches max
  *   Well under 50. If we hit the limit anyway, we abort with 502.
  */
-const MAX_SUBREQUESTS = 40; // hard cap, leaves headroom under Cloudflare's 50
-const MAX_UA_RETRIES = 3;   // channel UA + 2 fallbacks
-const MAX_REF_RETRIES = 2;  // channel ref + 1 fallback (or 2 fallbacks if no channel ref)
+const MAX_SUBREQUESTS = 15; // hard cap, well under Cloudflare's 50
+const MAX_UA_RETRIES = 2;   // channel UA + 1 fallback (single retry)
+const MAX_REF_RETRIES = 1;  // channel ref OR 1 fallback (no doubling)
 
 async function fetchUpstream(request, targetUrl, extraParams, env) {
   let currentUrl = targetUrl;

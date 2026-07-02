@@ -603,6 +603,69 @@
          .card-animate .card-inner h4 {
             font-size: 11px !important;
          }
+         /* Fixed horizontal category bar — below player, above channel grid */
+         #fixedCategoryBar {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 8px 12px;
+            background: linear-gradient(to bottom, #0a0a0a, #050505);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            border-top: 1px solid rgba(0, 243, 255, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            flex-shrink: 0;
+            scroll-behavior: smooth;
+            -webkit-overflow-scrolling: touch;
+         }
+         #fixedCategoryBar::-webkit-scrollbar { display: none; }
+         #fixedCategoryBar .cat-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            background: #111;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 999px;
+            color: #aaa;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            flex-shrink: 0;
+         }
+         #fixedCategoryBar .cat-chip:hover {
+            background: #1a1a1a;
+            color: #fff;
+         }
+         #fixedCategoryBar .cat-chip.active {
+            background: linear-gradient(135deg, rgba(0, 243, 255, 0.2), rgba(255, 0, 85, 0.2));
+            border-color: rgba(0, 243, 255, 0.5);
+            color: #00f3ff;
+            box-shadow: 0 0 12px rgba(0, 243, 255, 0.2);
+         }
+         #fixedCategoryBar .cat-chip i {
+            font-size: 10px;
+         }
+         /* Home banner ad */
+         .home-banner-ad {
+            margin: 0 0 16px 0;
+            min-height: 0;
+         }
+         .home-banner-ad:empty {
+            display: none;
+         }
+         .home-banner-ad img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 12px;
+            display: block;
+         }
          #channelPanel .pb-16 {
             padding-bottom: 1rem !important;
          }
@@ -3075,7 +3138,7 @@
    </div>
    <header class="bg-black/90 backdrop-blur-md border-b border-white/10 sticky top-0 z-50 h-16 flex-shrink-0">
       <div class="container mx-auto px-4 h-full flex items-center justify-between">
-         <div class="flex items-center gap-3"><button id="backToHomeBtn" class="hidden items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 transition text-gray-400 hover:text-cyan-400" title="Back to Home"><i class="fas fa-arrow-left text-sm"></i></button><i class="fas fa-tv text-cyan-400 text-xl"></i>
+         <div class="flex items-center gap-3"><button id="proxyToggleBtn" class="flex items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 transition text-gray-400 hover:text-cyan-400" title="Toggle Proxy (All Streams)"><i class="fas fa-shield-alt text-sm"></i></button><i class="fas fa-tv text-cyan-400 text-xl"></i>
             <h1 class="text-sm brand-font font-bold text-white tracking-wider">AI TV <span class="text-cyan-400">PRO</span></h1>
          </div>
          <div class="flex items-center gap-3"><button class="sm:hidden text-gray-400 hover:text-white transition" id="mobileSearchBtn"><i class="fas fa-search text-sm"></i></button>
@@ -3119,6 +3182,11 @@
                <div class="toggle-label"><i class="fas fa-bolt text-green-400"></i> <span>Buffering-Free</span></div>
                <div class="tv-toggle-switch"><input id="bfModeCheckbox" type="checkbox" /><span class="tv-toggle-slider"></span></div>
             </div>
+            <div class="tv-toggle-row" id="hapticToggleRow" tabindex="0">
+               <div class="toggle-label"><i class="fas fa-mobile-alt text-pink-400"></i> <span>Haptic Vibration</span></div>
+               <div class="tv-toggle-switch"><input id="hapticCheckbox" type="checkbox" checked /><span class="tv-toggle-slider"></span></div>
+            </div>
+            <p class="text-[10px] text-gray-600 mt-1">Vibration feedback on taps. On by default.</p>
          </div>
          <div class="sidebar-section">
             <div class="sidebar-section-title"><i class="fas fa-link"></i> Custom M3U Playlist</div>
@@ -3468,6 +3536,9 @@
          </div>
       </div>
       </div>
+      <div id="fixedCategoryBar" class="hidden">
+         <!-- Populated dynamically by renderFixedCategoryBar() -->
+      </div>
       <div class="flex-1 min-h-0 overflow-y-auto p-4 pb-16" id="channelPanel">
          <div class="container mx-auto">
             <div class="hidden" id="topBannerAd"></div>
@@ -3481,6 +3552,7 @@
       </div>
    </main><button id="footerShowBtn" title="Show menu"><i class="fas fa-chevron-up"></i></button>
    <div id="homeView">
+      <div id="homeBannerAd" class="home-banner-ad"></div>
       <section class="hero-section">
          <h2><i class="fas fa-bolt"></i> Sports Quick Categories</h2>
          <div class="quick-sports-cats" id="quickSportsCats">
@@ -3577,12 +3649,11 @@
             </button>
             <button class="tab" onclick="selectTab(this)">
                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="3" width="7" height="7"></rect>
-                  <rect x="14" y="3" width="7" height="7"></rect>
-                  <rect x="14" y="14" width="7" height="7"></rect>
-                  <rect x="3" y="14" width="7" height="7"></rect>
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path>
+                  <path d="M2 12h20"></path>
                </svg>
-               <div class="tab-text-wrapper"><span class="tab-text-content">Categories</span></div>
+               <div class="tab-text-wrapper"><span class="tab-text-content">FIFA Live</span></div>
             </button>
             <button class="tab" onclick="selectTab(this)">
                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
@@ -4353,6 +4424,13 @@
                topAdSlot.innerHTML = "";
                renderBannerAd(bannerAds[0], topAdSlot);
             }
+            // Also render banner ad on home page
+            var homeAdSlot = document.getElementById("homeBannerAd");
+            if (homeAdSlot) {
+               homeAdSlot.innerHTML = "";
+               var homeRandomIdx = Math.floor(Math.random() * bannerAds.length);
+               renderBannerAd(bannerAds[homeRandomIdx], homeAdSlot);
+            }
             const sidebarBody = document.querySelector("#settingsSidebar .sidebar-body");
             if (sidebarBody) {
                let sidebarAdSlot = document.getElementById("sidebarAdBanner");
@@ -4369,6 +4447,7 @@
          cachedInlineAds = await fetchInlineAds();
          const popupAds = await fetchPopupAds();
          if (popupAds.length > 0) {
+            // Show popup ad on BOTH home page and channel grid
             setTimeout(() => showPopupAd(popupAds[0]), 3000);
          }
          await loadAdScripts();
@@ -4963,15 +5042,15 @@
          if (ch && (ch.stream_type === 'iframe' || ch.type === 'iframe')) return false;
          // NEVER proxy uploaded media (base64 blob data)
          if (ch && (ch.stream_type === 'upload' || ch.media_data)) return false;
-         // PROXY: HTTP (insecure), HTTPS with referer/user-agent/cookie (origin expects them),
-         // BDIX private IP servers, anything with session/token/signature custom headers.
+         // User-controlled FORCE-PROXY toggle (the new toolbar button).
+         // When ON, ALL streams (HTTP + HTTPS) get proxied for VLC-like behavior.
+         if (window._forceProxyAll === true) return true;
+         // Default behavior (latency-optimized):
+         //   - HTTP (insecure) → proxy (mixed-content + CORS)
+         //   - BDIX private IP servers → proxy (CORS + accessibility)
+         //   - HTTPS streams → DIRECT (low latency, no Worker hop)
          if (/^http:\/\//i.test(url)) return true;
-         if (ch && (ch.referer || ch.user_agent || ch.http_cookie || ch.cookie)) return true;
-         if (ch && (ch.session || ch.signature || ch.http_headers)) return true;
          if (_isBDIXUrl(url)) return true;
-         // Default: also proxy HTTPS streams for VLC-like consistent behavior.
-         // The worker adds CORS headers + correct content-types so playback is reliable.
-         if (/^https:\/\//i.test(url)) return true;
          return false;
       }
       const playerWrapper = document.getElementById("playerWrapper");
@@ -5869,8 +5948,76 @@
                      return c.group === cat
                   }))
                }
+               // Sync fixed bar active state
+               _setFixedCategoryBarActive(cat);
             };
             catList.appendChild(btn);
+         });
+         // Render the fixed horizontal bar too
+         renderFixedCategoryBar(Array.from(cats).sort());
+      }
+      // Fixed horizontal category bar (below player)
+      var FIXED_CAT_ICONS = {
+         'all': 'fa-globe',
+         'sports': 'fa-futbol',
+         'news': 'fa-newspaper',
+         'entertainment': 'fa-film',
+         'music': 'fa-music',
+         'cartoon': 'fa-child',
+         'natok': 'fa-theater-masks',
+         'football': 'fa-futbol',
+         'default': 'fa-folder'
+      };
+      function _getCatIcon(cat) {
+         return FIXED_CAT_ICONS[(cat || '').toLowerCase()] || FIXED_CAT_ICONS['default'];
+      }
+      function renderFixedCategoryBar(cats) {
+         var bar = document.getElementById("fixedCategoryBar");
+         if (!bar) return;
+         // Only show the fixed bar when player is visible (i.e. main content shown)
+         var mc = document.getElementById("mainContent");
+         if (!mc || mc.classList.contains("hidden-view")) {
+            bar.classList.add("hidden");
+            return;
+         }
+         bar.classList.remove("hidden");
+         bar.innerHTML = "";
+         cats.forEach(function(cat) {
+            var chip = document.createElement("button");
+            chip.className = "cat-chip";
+            chip.setAttribute("data-cat", cat);
+            chip.innerHTML = '<i class="fas ' + _getCatIcon(cat) + '"></i><span>' + cat + '</span>';
+            chip.onclick = function(e) {
+               e.stopPropagation();
+               if (window._hapticVibration) { try { navigator.vibrate(8); } catch (e2) {} }
+               // Trigger the underlying category button click
+               var catBtns = document.querySelectorAll("#categoryList .cat-btn");
+               catBtns.forEach(function(b) {
+                  if (b.innerText.trim() === cat) {
+                     b.click();
+                  }
+               });
+               // Update active state visually
+               bar.querySelectorAll(".cat-chip").forEach(function(c) { c.classList.remove("active"); });
+               chip.classList.add("active");
+            };
+            bar.appendChild(chip);
+         });
+         // Default: "All" chip is active
+         var allChip = bar.querySelector('.cat-chip[data-cat="All"]');
+         if (allChip) allChip.classList.add("active");
+      }
+      function _setFixedCategoryBarActive(cat) {
+         var bar = document.getElementById("fixedCategoryBar");
+         if (!bar) return;
+         bar.querySelectorAll(".cat-chip").forEach(function(c) {
+            if (c.getAttribute("data-cat") === cat) {
+               c.classList.add("active");
+               // Scroll the chip into view smoothly within the horizontal bar
+               try { c.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); } catch (e) {}
+            } else {
+               c.classList.remove("active");
+            }
          });
       }
       function isPlayerVisible() {
@@ -6134,7 +6281,7 @@
             } catch (e) {
                playerLoader.classList.remove("hidden");
                playerLoader.classList.add("loader-offline");
-               playerStatusText.innerText = "Media load error";
+               playerStatusText.innerText = "Stream Offline";
             }
             return;
          }
@@ -6435,7 +6582,7 @@
                }
                playerLoader.classList.remove("hidden");
                playerLoader.classList.add("loader-offline");
-               playerStatusText.innerText = "";
+               playerStatusText.innerText = "Stream Offline";
             }, { once: true });
          } else if (isTS) {
             if (typeof mpegts !== 'undefined' && mpegts.isSupported()) {
@@ -6578,7 +6725,7 @@
                }
                playerLoader.classList.remove("hidden");
                playerLoader.classList.add("loader-offline");
-               playerStatusText.innerText = "Player init failed";
+               playerStatusText.innerText = "Stream Offline";
             }
             if (_shakaPlayer) {
                try {
@@ -6685,7 +6832,7 @@
                   if (errStr.indexOf('drm') !== -1 || errStr.indexOf('keysystem') !== -1 || errStr.indexOf('protection') !== -1) {
                      playerLoader.classList.remove("hidden");
                      playerLoader.classList.add("loader-offline");
-                     playerStatusText.innerText = "DRM Error";
+                     playerStatusText.innerText = "Stream Offline";
                      return;
                   }
                   // Don't try iframe fallback for stream URLs (it would cause browser
@@ -6770,7 +6917,7 @@
                }
                playerLoader.classList.remove("hidden");
                playerLoader.classList.add("loader-offline");
-               playerStatusText.innerText = "";
+               playerStatusText.innerText = "Stream Offline";
             }, { once: true });
          } else {
             if (isDash && typeof shaka === 'undefined') {
@@ -6781,7 +6928,7 @@
                }
                playerLoader.classList.remove("hidden");
                playerLoader.classList.add("loader-offline");
-               playerStatusText.innerText = "Player Library Failed";
+               playerStatusText.innerText = "Stream Offline";
             } else if (isDash && typeof shaka !== 'undefined' && !shaka.Player.isBrowserSupported()) {
                console.log("[Stream] DASH stream detected but Shaka Player reports browser unsupported.");
                if (window._streamLoadTimeout) {
@@ -6790,13 +6937,13 @@
                }
                playerLoader.classList.remove("hidden");
                playerLoader.classList.add("loader-offline");
-               playerStatusText.innerText = "Browser Unsupported";
+               playerStatusText.innerText = "Stream Offline";
             } else if (isHTTPDirect && !isDash && !isHLS) {
                tryIframeFallback(ch.url);
             } else {
                playerLoader.classList.remove("hidden");
                playerLoader.classList.add("loader-offline");
-               playerStatusText.innerText = "Unsupported Format";
+               playerStatusText.innerText = "Stream Offline";
             }
          }
          const playingCard2 = document.querySelector('.card-animate[data-ch-index="' + currentChannelIndex + '"]');
@@ -8004,8 +8151,65 @@
             }
          }
       })();
+      // Haptic vibration toggle (default: ON)
+      window._hapticVibration = (localStorage.getItem('aitv_haptic') !== 'off'); // default ON
+      (function() {
+         var cb = document.getElementById('hapticCheckbox');
+         if (cb) cb.checked = window._hapticVibration;
+      })();
+      function toggleHaptic() {
+         window._hapticVibration = !window._hapticVibration;
+         localStorage.setItem('aitv_haptic', window._hapticVibration ? 'on' : 'off');
+         var cb = document.getElementById('hapticCheckbox');
+         if (cb) cb.checked = window._hapticVibration;
+         if (window._hapticVibration) {
+            try { navigator.vibrate(20); } catch (e) {}
+         }
+         showToast(window._hapticVibration ? 'Haptic Vibration ON' : 'Haptic Vibration OFF');
+      }
+      document.getElementById('hapticToggleRow').addEventListener('click', function(e) {
+         if (e.target === document.getElementById('hapticCheckbox')) return;
+         e.stopPropagation();
+         toggleHaptic();
+      });
+      document.getElementById('hapticCheckbox').addEventListener('change', function(e) {
+         toggleHaptic();
+      });
       var _isHomePage = true;
-      var backToHomeBtn = document.getElementById("backToHomeBtn");
+      var proxyToggleBtn = document.getElementById("proxyToggleBtn");
+      // Proxy-all toggle: when ON, ALL streams (HTTP + HTTPS) get proxied.
+      // When OFF (default), only HTTP + BDIX get proxied (latency-optimized).
+      window._forceProxyAll = (localStorage.getItem('aitv_force_proxy') === 'on');
+      function applyProxyToggleVisual() {
+         if (!proxyToggleBtn) return;
+         if (window._forceProxyAll) {
+            proxyToggleBtn.classList.add('bg-cyan-500/20');
+            proxyToggleBtn.classList.add('border-cyan-400');
+            proxyToggleBtn.classList.add('text-cyan-400');
+            proxyToggleBtn.title = 'Proxy: ON (All streams routed through Worker)';
+         } else {
+            proxyToggleBtn.classList.remove('bg-cyan-500/20');
+            proxyToggleBtn.classList.remove('border-cyan-400');
+            proxyToggleBtn.classList.remove('text-cyan-400');
+            proxyToggleBtn.title = 'Proxy: OFF (Only HTTP/BDIX routed)';
+         }
+      }
+      function toggleProxyAll() {
+         window._forceProxyAll = !window._forceProxyAll;
+         localStorage.setItem('aitv_force_proxy', window._forceProxyAll ? 'on' : 'off');
+         applyProxyToggleVisual();
+         if (window._hapticVibration) {
+            try { navigator.vibrate(15); } catch (e) {}
+         }
+         showToast(window._forceProxyAll ? 'Proxy ON — All streams routed' : 'Proxy OFF — HTTP/BDIX only');
+      }
+      applyProxyToggleVisual();
+      if (proxyToggleBtn) {
+         proxyToggleBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            toggleProxyAll();
+         });
+      }
       function goBackToHome() {
          if (settingsSidebar && settingsSidebar.classList.contains('active')) {
             closeSettings();
@@ -8065,22 +8269,10 @@
          window.scrollTo({ top: 0, behavior: 'smooth' });
       }
       function updateBackButton() {
-         if (!backToHomeBtn) return;
-         if (_isHomePage) {
-            backToHomeBtn.classList.remove('visible');
-         } else {
-            backToHomeBtn.classList.add('visible');
-         }
-      }
-      if (backToHomeBtn) {
-         backToHomeBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            goBackToHome();
-         });
+         // Back button replaced by proxy toggle. No-op.
       }
       function markNotHomePage() {
          _isHomePage = false;
-         updateBackButton();
       }
       var _origPlayChannel = playChannel;
       playChannel = function(ch) {
@@ -8220,18 +8412,18 @@
           var clickedIndex = tabs.indexOf(clickedTab);
 
           if (clickedIndex === 2) {
-              var categoryDrawer = document.getElementById("categoryDrawer");
-              var catArrow = document.getElementById("catArrow");
-              var isOpen = categoryDrawer.classList.toggle("open");
-              if (catArrow) {
-                  catArrow.classList.toggle("fa-chevron-up");
-                  catArrow.classList.toggle("fa-chevron-down");
-              }
-              document.body.classList.toggle("menu-open", isOpen);
-
+              // FIFA Live tab → load Sports category (sports.m3u)
               moveActivePill(clickedTab);
               tabs.forEach(function(tab) { tab.classList.remove('active'); });
               clickedTab.classList.add('active');
+              _closeCategoryDrawer();
+              document.getElementById('homeView').classList.add('hidden-view');
+              document.getElementById('mainContent').classList.remove('hidden-view');
+              if (typeof loadFrontendCategoryOnly === 'function') {
+                  loadFrontendCategoryOnly('Sports');
+              } else if (typeof loadAdminCategoryOnly === 'function') {
+                  loadAdminCategoryOnly('Sports');
+              }
               return;
           }
 
