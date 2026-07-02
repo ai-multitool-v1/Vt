@@ -552,6 +552,7 @@
       @media (min-width: 1024px) {
          #mainContent {
             flex-direction: row !important;
+            flex-wrap: wrap !important;
          }
          #playerPanel {
             order: 2;
@@ -571,6 +572,18 @@
             min-width: 0;
             overflow-y: auto;
             border-right: 1px solid rgba(255, 255, 255, 0.06);
+         }
+         /* Category bar spans full width below both columns on desktop */
+         #fixedCategoryBar {
+            order: 3;
+            width: 100% !important;
+            max-width: 100% !important;
+            position: sticky;
+            bottom: 0;
+            top: auto;
+            z-index: 30;
+            border-top: 1px solid rgba(0, 243, 255, 0.15);
+            border-bottom: none;
          }
          #playerPanel #playerWrapper {
             position: relative !important;
@@ -651,7 +664,7 @@
          #proxyToggleBtn .proxy-toggle-label { display: none; }
          #proxyToggleBtn { padding: 6px 10px; }
       }
-      /* Fixed horizontal category bar (outside media query — works on all sizes) */
+      /* Fixed horizontal category bar — sits right below player, full width */
       #fixedCategoryBar {
          display: flex;
          gap: 8px;
@@ -661,16 +674,15 @@
          background: linear-gradient(to bottom, #0a0a0a, #050505);
          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
          border-top: 1px solid rgba(0, 243, 255, 0.1);
-         position: sticky;
-         top: 0;
+         position: relative;
          z-index: 20;
          scrollbar-width: none;
          -ms-overflow-style: none;
          flex-shrink: 0;
          scroll-behavior: smooth;
          -webkit-overflow-scrolling: touch;
-         margin: -16px -16px 12px -16px;
-         width: calc(100% + 32px);
+         width: 100%;
+         order: 3;
       }
       #fixedCategoryBar.hidden { display: none !important; }
       #fixedCategoryBar::-webkit-scrollbar { display: none; }
@@ -3589,10 +3601,10 @@
          </div>
       </div>
       </div>
+      <div id="fixedCategoryBar" class="hidden">
+         <!-- Populated dynamically by renderFixedCategoryBar() — sits right below player -->
+      </div>
       <div class="flex-1 min-h-0 overflow-y-auto p-4 pb-16" id="channelPanel">
-         <div id="fixedCategoryBar" class="hidden">
-            <!-- Populated dynamically by renderFixedCategoryBar() -->
-         </div>
          <div class="container mx-auto">
             <div class="hidden" id="topBannerAd"></div>
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 pb-2" id="channelGrid"></div><button id="loadMoreBtn" tabindex="0"><span class="btn-text">Load More Channels</span><span class="btn-loader"><svg height="20" style="animation:channelSvgSpin 1.2s linear infinite" viewbox="0 0 50 50" width="20" xmlns="http://www.w3.org/2000/svg">
@@ -6043,22 +6055,51 @@
             chip.onclick = function(e) {
                e.stopPropagation();
                if (typeof window.haptic === 'function') { window.haptic(8); }
-               // Trigger the underlying category button click
-               var catBtns = document.querySelectorAll("#categoryList .cat-btn");
-               catBtns.forEach(function(b) {
-                  if (b.innerText.trim() === cat) {
-                     b.click();
-                  }
-               });
+               // Directly filter the channel grid by group category — no dependency
+               // on the category drawer buttons being rendered.
+               _filterGridByCategory(cat);
                // Update active state visually
                bar.querySelectorAll(".cat-chip").forEach(function(c) { c.classList.remove("active"); });
                chip.classList.add("active");
+               // Sync the category drawer buttons too (if rendered)
+               var catBtns = document.querySelectorAll("#categoryList .cat-btn");
+               catBtns.forEach(function(b) {
+                  if (b.innerText.trim() === cat) {
+                     b.classList.add("active");
+                  } else {
+                     b.classList.remove("active");
+                  }
+               });
             };
             bar.appendChild(chip);
          });
          // Default: "All" chip is active
          var allChip = bar.querySelector('.cat-chip[data-cat="All"]');
          if (allChip) allChip.classList.add("active");
+      }
+      // Filter the channel grid by group category (used by the fixed bar chips).
+      // "All" shows every channel; any other value filters by c.group === cat.
+      // Admin categories are loaded via loadAdminCategoryOnly for full fetch.
+      function _filterGridByCategory(cat) {
+         if (!cat || cat === "All") {
+            renderGrid(allChannels);
+            return;
+         }
+         // Check if it's an admin category (needs server fetch for full list)
+         var isAdminCat = adminCategories && adminCategories.indexOf(cat) > -1;
+         if (isAdminCat) {
+            if (FRONTEND_ENABLED && FRONTEND_CATEGORY_M3U_MAP[cat]) {
+               loadFrontendCategoryOnly(cat);
+            } else {
+               loadAdminCategoryOnly(cat);
+            }
+            return;
+         }
+         // Local filter by group
+         var filtered = allChannels.filter(function(c) {
+            return c.group === cat;
+         });
+         renderGrid(filtered);
       }
       function _setFixedCategoryBarActive(cat) {
          var bar = document.getElementById("fixedCategoryBar");
