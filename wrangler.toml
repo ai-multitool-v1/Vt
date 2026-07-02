@@ -3,7 +3,7 @@ main = "worker/index.js"
 compatibility_date = "2026-07-02"
 workers_dev = true
 
-# Optional: set allowed hosts (comma separated). Leave commented to allow any.
+# Optional: hset allowed hosts (comma separated). Leave commented to allow any.
 # [vars]
 # ALLOWED_HOSTS = "example.com,example.net"
 # PROXY_TOKEN = "your-secret-token-here"
