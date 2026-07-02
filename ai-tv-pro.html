@@ -6171,7 +6171,7 @@
          }
          (function checkStreamHTTP() {
             try {
-               var checkUrl = ch.url;
+               var checkUrl = _effectiveUrl || ch.url;
                if (checkUrl.startsWith('blob:') || checkUrl.startsWith('data:')) return;
                fetch(checkUrl, {
                      method: 'HEAD',
@@ -6180,6 +6180,24 @@
                   })
                   .then(function(resp) {
                      var status = resp.status;
+                     var ct = (resp.headers && resp.headers.get('content-type')) || '';
+                     // Detect Cloudflare Worker JSON error responses.
+                     // The worker returns {"ok":false,"message":"..."} with content-type application/json
+                     // when upstream is blocked. Show "Stream Offline" instead of passing JSON to player.
+                     if (ct.indexOf('application/json') !== -1 || status === 502 || status === 520) {
+                        console.log('[Proxy] Pre-check detected proxy error response (status=' + status + ', ct=' + ct + ')');
+                        if (window._streamLoadTimeout) {
+                           clearTimeout(window._streamLoadTimeout);
+                           window._streamLoadTimeout = null;
+                        }
+                        playerLoader.classList.remove('hidden');
+                        playerLoader.classList.add('loader-offline');
+                        playerStatusText.innerText = 'Stream Offline';
+                        if (hls) { try { hls.destroy() } catch (e) {} hls = null; }
+                        if (window._mpegtsPlayer) { try { window._mpegtsPlayer.destroy(); } catch (e) {} window._mpegtsPlayer = null; }
+                        if (_shakaPlayer) { try { _shakaPlayer.destroy(); } catch (e) {} _shakaPlayer = null; window._shakaPlayer = null; }
+                        return;
+                     }
                      if (status === 404 || status === 403 || status === 500 || status === 502 || status === 503) {
                         if (window._streamLoadTimeout) {
                            clearTimeout(window._streamLoadTimeout);
@@ -6187,51 +6205,14 @@
                         }
                         playerLoader.classList.remove('hidden');
                         playerLoader.classList.add('loader-offline');
-                        playerStatusText.innerText = 'Stream Offline (' + status + ')';
-                        if (hls) {
-                           try { hls.destroy() } catch (e) {}
-                           hls = null;
-                        }
-                        if (window._mpegtsPlayer) {
-                           try { window._mpegtsPlayer.destroy(); } catch (eMtsSt) {}
-                           window._mpegtsPlayer = null;
-                        }
-                        if (_shakaPlayer) {
-                           try { _shakaPlayer.destroy(); } catch (eShSt) {}
-                           _shakaPlayer = null;
-                           window._shakaPlayer = null;
-                        }
+                        playerStatusText.innerText = 'Stream Offline';
+                        if (hls) { try { hls.destroy() } catch (e) {} hls = null; }
+                        if (window._mpegtsPlayer) { try { window._mpegtsPlayer.destroy(); } catch (e) {} window._mpegtsPlayer = null; }
+                        if (_shakaPlayer) { try { _shakaPlayer.destroy(); } catch (e) {} _shakaPlayer = null; window._shakaPlayer = null; }
                      }
                   })
                   .catch(function() {
-                     fetch(checkUrl, {
-                           method: 'HEAD',
-                           mode: 'no-cors',
-                           cache: 'no-store'
-                        })
-                        .then(function(resp) {})
-                        .catch(function() {
-                           if (window._streamLoadTimeout) {
-                              clearTimeout(window._streamLoadTimeout);
-                              window._streamLoadTimeout = null;
-                           }
-                           playerLoader.classList.remove('hidden');
-                           playerLoader.classList.add('loader-offline');
-                           playerStatusText.innerText = 'Stream Offline';
-                           if (hls) {
-                              try { hls.destroy() } catch (e) {}
-                              hls = null;
-                           }
-                           if (window._mpegtsPlayer) {
-                              try { window._mpegtsPlayer.destroy(); } catch (eMtsSt2) {}
-                              window._mpegtsPlayer = null;
-                           }
-                           if (_shakaPlayer) {
-                              try { _shakaPlayer.destroy(); } catch (eShSt2) {}
-                              _shakaPlayer = null;
-                              window._shakaPlayer = null;
-                           }
-                        });
+                     // HEAD failed (CORS or network) — silent, let player try GET.
                   });
             } catch (e) {}
          })();
@@ -6295,7 +6276,7 @@
                }
                playerLoader.classList.remove("hidden");
                playerLoader.classList.add("loader-offline");
-               playerStatusText.innerText = "Stream Unavailable";
+               playerStatusText.innerText = "Stream Offline";
                return;
             }
             if (hls) {
@@ -6423,13 +6404,12 @@
                      clearTimeout(window._streamLoadTimeout);
                      window._streamLoadTimeout = null;
                   }
-                  if (errCategory === SHAKA_CATEGORY_NETWORK) {
-                     tryIframeFallback(ch.url);
-                     return;
-                  }
+                  // Show "Stream Offline" for all critical errors. Don't try iframe
+                  // fallback for stream URLs (mpd/m3u8/ts) — it would cause browser
+                  // download prompt or render JSON error as HTML.
                   playerLoader.classList.remove("hidden");
                   playerLoader.classList.add("loader-offline");
-                  playerStatusText.innerText = "Stream Error";
+                  playerStatusText.innerText = "Stream Offline";
                }
             });
          }
@@ -6482,7 +6462,15 @@
                          errType === mpegts.ErrorTypes.MEDIA_ERROR) {
                         try { window._mpegtsPlayer.destroy(); } catch (eMts2) {}
                         window._mpegtsPlayer = null;
-                        tryIframeFallback(ch.url);
+                        // Show "Stream Offline" instead of iframe fallback (which
+                        // would render JSON error as HTML or trigger browser download).
+                        if (window._streamLoadTimeout) {
+                           clearTimeout(window._streamLoadTimeout);
+                           window._streamLoadTimeout = null;
+                        }
+                        playerLoader.classList.remove("hidden");
+                        playerLoader.classList.add("loader-offline");
+                        playerStatusText.innerText = "Stream Offline";
                      }
                   });
                   window._mpegtsPlayer.on(mpegts.Events.LOADING_COMPLETE, function() {
@@ -6700,7 +6688,16 @@
                      playerStatusText.innerText = "DRM Error";
                      return;
                   }
-                  tryIframeFallback(ch.url);
+                  // Don't try iframe fallback for stream URLs (it would cause browser
+                  // download or JSON-as-HTML rendering). Show "Stream Offline" instead.
+                  playerLoader.classList.remove("hidden");
+                  playerLoader.classList.add("loader-offline");
+                  playerStatusText.innerText = "Stream Offline";
+                  if (_shakaPlayer) {
+                     try { _shakaPlayer.destroy(); } catch (e) {}
+                     _shakaPlayer = null;
+                     window._shakaPlayer = null;
+                  }
                });
                videoPlayer.addEventListener("waiting", function() {
                   playerLoader.classList.remove("hidden");

@@ -323,33 +323,55 @@ export default {
  * Fetches the target URL with timeout + manual redirect following
  * (301/302/303/307/308), re-validating the host allowlist on every hop.
  *
- * VLC-like behavior: if the upstream returns 401/403, we retry with
- * different User-Agent + Referer combinations from the pool. The first
- * combination that works is cached per-host for subsequent requests.
+ * VLC-like behavior: if upstream returns 401/403, retry with a different
+ * User-Agent + Referer combination. STRICTLY CAPPED to fit Cloudflare's
+ * free-plan 50-subrequest limit per Worker invocation.
+ *
+ * Subrequest budget breakdown (worst case):
+ *   - 3 redirects × 3 UA retries = 9 fetches max
+ *   - + 2 referer fallbacks = 11 fetches max
+ *   Well under 50. If we hit the limit anyway, we abort with 502.
  */
+const MAX_SUBREQUESTS = 40; // hard cap, leaves headroom under Cloudflare's 50
+const MAX_UA_RETRIES = 3;   // channel UA + 2 fallbacks
+const MAX_REF_RETRIES = 2;  // channel ref + 1 fallback (or 2 fallbacks if no channel ref)
+
 async function fetchUpstream(request, targetUrl, extraParams, env) {
   let currentUrl = targetUrl;
   let redirects = 0;
   let uaRetryIdx = 0;
   let refRetryIdx = -1;
+  let totalSubrequests = 0;
 
   // Build the initial UA list: explicit channel UA first, then the pool.
+  // Capped at MAX_UA_RETRIES to keep subrequest count under Cloudflare's limit.
   const uaList = [];
   if (extraParams.ua) uaList.push(decodeURIComponent(extraParams.ua));
   const cachedUa = _hostUaCache.get(targetUrl.hostname);
-  if (cachedUa) uaList.push(cachedUa);
+  if (cachedUa && !uaList.includes(cachedUa)) uaList.push(cachedUa);
   for (const ua of USER_AGENT_POOL) {
+    if (uaList.length >= MAX_UA_RETRIES) break;
     if (!uaList.includes(ua)) uaList.push(ua);
   }
 
   // Build the Referer list: explicit channel ref first, then fallbacks.
+  // Capped at MAX_REF_RETRIES.
   const refList = [];
   if (extraParams.ref) refList.push(decodeURIComponent(extraParams.ref));
   const cachedRef = _hostUaCache.get(targetUrl.hostname + ":ref");
-  if (cachedRef) refList.push(cachedRef);
+  if (cachedRef && !refList.includes(cachedRef)) refList.push(cachedRef);
   // We'll lazily add fallback referers only if we hit a 403.
 
   while (true) {
+    // Hard cap on total subrequests to avoid Cloudflare's "Too many subrequests" error.
+    if (totalSubrequests >= MAX_SUBREQUESTS) {
+      return jsonResponse(
+        { ok: false, message: "Subrequest limit reached. Stream may be blocked or require VLC." },
+        502
+      );
+    }
+    totalSubrequests += 1;
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
 
@@ -385,21 +407,22 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
       }
       currentUrl = nextUrl;
       redirects += 1;
-      // Keep the same UA/Ref through the redirect chain (origin-server side
-      // session).
+      // Reset UA retry counter on redirect — the new host may accept the channel UA.
+      uaRetryIdx = 0;
       continue;
     }
 
-    // VLC-like retry: 401/403/429 → try next UA, then next Referer fallback.
+    // VLC-like retry on 401/403/429. Capped to fit subrequest budget.
     if ((resp.status === 401 || resp.status === 403 || resp.status === 429) && uaRetryIdx < uaList.length - 1) {
       uaRetryIdx += 1;
-      // Close body to free resources
       try { await resp.arrayBuffer(); } catch (e) {}
       continue;
     }
+    // Only try referer fallbacks if UA retries exhausted AND we haven't tried referer fallbacks yet.
     if ((resp.status === 401 || resp.status === 403) && refRetryIdx === -1) {
-      // Add fallback referers and try them.
+      // Add at most MAX_REF_RETRIES fallback referers.
       for (const r of REFERER_FALLBACKS(targetUrl.hostname)) {
+        if (refList.length >= MAX_REF_RETRIES) break;
         if (!refList.includes(r)) refList.push(r);
       }
       refRetryIdx = 0;
@@ -408,7 +431,8 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
     }
     if ((resp.status === 401 || resp.status === 403) && refRetryIdx < refList.length - 1) {
       refRetryIdx += 1;
-      uaRetryIdx = 0; // restart UA rotation with new referer
+      // Don't reset uaRetryIdx — keep subrequest count low, just try the next referer
+      // with the last working UA.
       try { await resp.arrayBuffer(); } catch (e) {}
       continue;
     }
