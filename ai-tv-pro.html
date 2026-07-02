@@ -634,12 +634,21 @@
          max-width: 180px;
          object-fit: contain;
          display: block;
+         flex-shrink: 0;
       }
       @media (max-width: 640px) {
          .header-logo {
             height: 36px;
             max-width: 130px;
          }
+      }
+      /* Header right group: prevent overflow on mobile */
+      .header-right-group {
+         min-width: 0;
+         flex-wrap: nowrap;
+      }
+      header .container {
+         overflow: visible;
       }
       .worldcup-trophy-icon {
          color: #facc15;
@@ -3222,20 +3231,20 @@
          <div class="flex items-center gap-3">
             <img src="https://i.postimg.cc/J0p7tNVv/Picsart-26-07-02-22-17-12-974.png" alt="AI TV Pro" class="header-logo" onerror="this.style.display='none'">
          </div>
-         <div class="flex items-center gap-3">
-            <button id="proxyToggleBtn" class="flex items-center gap-2 bg-[#111] hover:bg-[#222] border border-white/10 px-3 py-1.5 rounded-full text-xs font-bold text-gray-300 transition" title="Toggle Proxy (All Streams)">
+         <div class="flex items-center gap-2 sm:gap-3 header-right-group">
+            <button id="proxyToggleBtn" class="flex items-center gap-1.5 bg-[#111] hover:bg-[#222] border border-white/10 px-2 sm:px-3 py-1.5 rounded-full text-xs font-bold text-gray-300 transition flex-shrink-0" title="Toggle Proxy (All Streams)">
                <i class="fas fa-shield-alt text-sm"></i>
-               <span class="proxy-toggle-label">Proxy</span>
+               <span class="proxy-toggle-label hidden sm:inline">Proxy</span>
                <span class="proxy-toggle-state" id="proxyToggleState">OFF</span>
             </button>
-            <button class="sm:hidden text-gray-400 hover:text-white transition" id="mobileSearchBtn"><i class="fas fa-search text-sm"></i></button>
-            <div class="relative hidden sm:block"><input class="bg-[#111] border border-white/10 rounded-full py-1.5 pl-8 pr-4 text-xs text-white focus:border-cyan-500/50 focus:outline-none w-32 focus:w-48 transition-all" id="searchInput" placeholder="Search..." type="text" /><i class="fas fa-search absolute left-3 top-2 text-gray-500"></i></div>
-            <div class="relative"><button class="flex items-center gap-2 bg-[#111] hover:bg-[#222] border border-white/10 px-3 py-1.5 rounded text-xs font-bold text-gray-300 transition" id="regionBtn"><i class="fas fa-globe text-pink-500"></i><span id="selectedRegion">Bangladesh</span><i class="fas fa-chevron-down text-[10px]"></i></button>
+            <button class="sm:hidden text-gray-400 hover:text-white transition flex-shrink-0" id="mobileSearchBtn"><i class="fas fa-search text-sm"></i></button>
+            <div class="relative hidden sm:block flex-shrink-0"><input class="bg-[#111] border border-white/10 rounded-full py-1.5 pl-8 pr-4 text-xs text-white focus:border-cyan-500/50 focus:outline-none w-32 focus:w-48 transition-all" id="searchInput" placeholder="Search..." type="text" /><i class="fas fa-search absolute left-3 top-2 text-gray-500"></i></div>
+            <div class="relative flex-shrink-0"><button class="flex items-center gap-1 sm:gap-2 bg-[#111] hover:bg-[#222] border border-white/10 px-2 sm:px-3 py-1.5 rounded text-xs font-bold text-gray-300 transition" id="regionBtn"><i class="fas fa-globe text-pink-500"></i><span id="selectedRegion" class="hidden sm:inline">Bangladesh</span><i class="fas fa-chevron-down text-[10px]"></i></button>
                <div class="absolute right-0 top-full mt-2 w-64 bg-[#0a0a0a] border border-white/10 rounded shadow-2xl z-50 max-h-96 overflow-y-auto smooth-dropdown" id="regionDropdown">
                   <div class="p-2 sticky top-0 bg-[#0a0a0a] border-b border-white/5 z-10"><input class="w-full bg-[#111] border border-white/5 rounded px-2 py-1 text-xs text-white focus:outline-none" id="regionSearch" placeholder="Filter..." type="text" /></div>
                   <div class="p-1" id="countryList"></div>
                </div>
-            </div><button class="flex flex-col items-center justify-center gap-[3px] w-8 h-8 rounded hover:bg-white/10 transition cursor-pointer" id="settingsToggleBtn" title="Settings"><span class="block w-[18px] h-[2px] bg-gray-300 rounded transition-all"></span><span class="block w-[18px] h-[2px] bg-gray-300 rounded transition-all"></span><span class="block w-[18px] h-[2px] bg-gray-300 rounded transition-all"></span></button>
+            </div><button class="flex flex-col items-center justify-center gap-[3px] w-8 h-8 rounded hover:bg-white/10 transition cursor-pointer flex-shrink-0" id="settingsToggleBtn" title="Settings"><span class="block w-[18px] h-[2px] bg-gray-300 rounded transition-all"></span><span class="block w-[18px] h-[2px] bg-gray-300 rounded transition-all"></span><span class="block w-[18px] h-[2px] bg-gray-300 rounded transition-all"></span></button>
          </div>
       </div>
       <div class="hidden sm:hidden bg-[#0a0a0a] border-b border-white/10 px-4 py-2" id="mobileSearchBar">
@@ -8626,13 +8635,21 @@
 
               document.getElementById('homeView').classList.add('hidden-view');
               document.getElementById('mainContent').classList.remove('hidden-view');
-              // Re-render the fixed category bar so group categories show up
-              // when user navigates to Live TV tab (channels may already be loaded).
-              // Categories come ONLY from M3U group-title (channel.group).
-              if (typeof renderFixedCategoryBar === 'function' && allChannels.length > 0) {
-                  var cats = new Set(["All"]);
-                  allChannels.forEach(function(c) { if (c.group) cats.add(c.group); });
-                  renderFixedCategoryBar(Array.from(cats).sort());
+              // Live TV: reload ALL frontend channels (not just the FIFA/Sports subset).
+              // This ensures allChannels contains every category from every M3U file,
+              // not just the Sports channels that FIFA Live tab loaded.
+              if (FRONTEND_ENABLED) {
+                  // Reset allChannels to empty, then load all frontend M3U files
+                  allChannels = [];
+                  _frontendM3UCache = {}; // clear cache so fetchFrontendM3U re-fetches
+                  loadFrontendChannels().then(function() {
+                      renderCategories(allChannels);
+                      renderGrid(allChannels);
+                      autoPlayLastChannel();
+                  });
+              } else {
+                  renderCategories(allChannels);
+                  renderGrid(allChannels);
               }
               var _isWideScreen = window.innerWidth >= 1024;
               var _isTvMode = document.body.classList.contains('tv-mode');
