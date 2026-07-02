@@ -572,13 +572,11 @@
             overflow-y: auto;
             border-right: 1px solid rgba(255, 255, 255, 0.06);
          }
-         /* Category bar sits below player controls inside playerPanel */
+         /* Category bar is inside channelPanel (left side), sticky at top */
          #fixedCategoryBar {
-            order: 2;
-            flex-shrink: 0;
-            position: relative;
-            bottom: auto;
-            top: auto;
+            position: sticky;
+            top: 0;
+            z-index: 20;
          }
          #playerPanel #playerWrapper {
             position: relative !important;
@@ -631,16 +629,16 @@
       }
       /* Proxy toggle button in header (outside media query — works on all sizes) */
       .header-logo {
-         height: 36px;
+         height: 48px;
          width: auto;
-         max-width: 140px;
+         max-width: 180px;
          object-fit: contain;
          display: block;
       }
       @media (max-width: 640px) {
          .header-logo {
-            height: 28px;
-            max-width: 100px;
+            height: 36px;
+            max-width: 130px;
          }
       }
       .worldcup-trophy-icon {
@@ -676,7 +674,7 @@
          #proxyToggleBtn .proxy-toggle-label { display: none; }
          #proxyToggleBtn { padding: 6px 10px; }
       }
-      /* Fixed horizontal category bar — sits right below player controls */
+      /* Fixed horizontal category bar — above channel grid, sticky on scroll */
       #fixedCategoryBar {
          display: flex;
          gap: 8px;
@@ -686,7 +684,8 @@
          background: linear-gradient(to bottom, #0a0a0a, #050505);
          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
          border-top: 1px solid rgba(0, 243, 255, 0.1);
-         position: relative;
+         position: sticky;
+         top: 0;
          z-index: 20;
          scrollbar-width: none;
          -ms-overflow-style: none;
@@ -694,6 +693,7 @@
          scroll-behavior: smooth;
          -webkit-overflow-scrolling: touch;
          width: 100%;
+         margin-bottom: 8px;
       }
       #fixedCategoryBar.hidden { display: none !important; }
       #fixedCategoryBar::-webkit-scrollbar { display: none; }
@@ -2646,8 +2646,8 @@
    /* FIFA Live tab trophy icon — uses fill instead of stroke, so it needs
       explicit sizing to render visibly at the same scale as other icons */
    .tab svg[viewBox="0 0 600.000000 530.000000"] {
-       width: 22px;
-       height: 22px;
+       width: 28px;
+       height: 28px;
        fill: currentColor;
        color: #facc15; /* gold */
    }
@@ -3626,11 +3626,12 @@
             </div>
             <div class="speed-meter" id="speedMeter" style="display:none;">↓ 0 Mbps</div>
          </div>
-      <div id="fixedCategoryBar" class="hidden">
-         <!-- Populated dynamically by renderFixedCategoryBar() — right below player controls -->
       </div>
       </div>
       <div class="flex-1 min-h-0 overflow-y-auto p-4 pb-16" id="channelPanel">
+         <div id="fixedCategoryBar" class="hidden">
+            <!-- Populated dynamically — above channel grid, on left side (desktop) -->
+         </div>
          <div class="container mx-auto">
             <div class="hidden" id="topBannerAd"></div>
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 pb-2" id="channelGrid"></div><button id="loadMoreBtn" tabindex="0"><span class="btn-text">Load More Channels</span><span class="btn-loader"><svg height="20" style="animation:channelSvgSpin 1.2s linear infinite" viewbox="0 0 50 50" width="20" xmlns="http://www.w3.org/2000/svg">
@@ -6016,24 +6017,17 @@
          return card;
       }
       function renderCategories(list) {
+         // Categories come ONLY from M3U group-title (channel.group).
+         // No hardcoded categories, no admin categories — pure group-title extraction.
          var cats = new Set(["All"]);
          list.forEach(function(c) {
-            cats.add(c.group)
+            if (c.group) cats.add(c.group);
          });
-         if (adminCategories && adminCategories.length > 0) {
-            adminCategories.forEach(function(cat) {
-               cats.add(cat)
-            });
-         }
          var catList = document.getElementById("categoryList");
          catList.innerHTML = "";
          Array.from(cats).sort().forEach(function(cat) {
             var btn = document.createElement("button");
             btn.className = "cat-btn px-3 py-1 bg-[#111] hover:bg-white/10 border border-white/10 rounded text-[10px] text-gray-300 uppercase font-bold transition";
-            var isAdminCat = adminCategories && adminCategories.indexOf(cat) > -1;
-            if (isAdminCat) {
-               btn.style.borderColor = "rgba(0,243,255,0.3)"
-            }
             btn.innerText = cat;
             btn.onclick = function(e) {
                e.stopPropagation();
@@ -6041,17 +6035,7 @@
                   b.classList.remove("active")
                });
                btn.classList.add("active");
-               if (cat === "All") {
-                  renderGrid(allChannels)
-               } else if (isAdminCat) {
-                  loadAdminCategoryOnly(cat)
-               } else {
-                  renderGrid(allChannels.filter(function(c) {
-                     return c.group === cat
-                  }))
-               }
-               // Sync fixed bar active state
-               _setFixedCategoryBarActive(cat);
+               _filterGridByCategory(cat);
             };
             catList.appendChild(btn);
          });
@@ -6137,10 +6121,10 @@
          if (savedChip2) savedChip2.classList.add("active");
          else if (bar.querySelector('.cat-chip[data-cat="All"]')) bar.querySelector('.cat-chip[data-cat="All"]').classList.add("active");
       }
-      // Filter the channel grid by group category (used by the fixed bar chips).
+      // Filter the channel grid by group category (used by the fixed bar chips
+      // and the category drawer buttons).
       // "All" shows every channel; any other value filters by c.group === cat.
-      // Admin categories are loaded via loadAdminCategoryOnly for full fetch.
-      // Track the currently-selected category so it persists across re-renders.
+      // allChannels is NEVER modified — we always create a new filtered array.
       window._selectedCategory = "All";
       function _filterGridByCategory(cat) {
          window._selectedCategory = cat || "All";
@@ -6149,22 +6133,11 @@
             _setFixedCategoryBarActive("All");
             return;
          }
-         // Check if it's an admin category (needs server fetch for full list)
-         var isAdminCat = adminCategories && adminCategories.indexOf(cat) > -1;
-         if (isAdminCat) {
-            if (FRONTEND_ENABLED && FRONTEND_CATEGORY_M3U_MAP[cat]) {
-               loadFrontendCategoryOnly(cat);
-            } else {
-               loadAdminCategoryOnly(cat);
-            }
-            _setFixedCategoryBarActive(cat);
-            return;
-         }
-         // Local filter by group
-         var filtered = allChannels.filter(function(c) {
+         // Local filter by group-title — no server fetch, no page reload.
+         var filteredChannels = allChannels.filter(function(c) {
             return c.group === cat;
          });
-         renderGrid(filtered);
+         renderGrid(filteredChannels);
          _setFixedCategoryBarActive(cat);
       }
       function _setFixedCategoryBarActive(cat) {
@@ -8655,12 +8628,10 @@
               document.getElementById('mainContent').classList.remove('hidden-view');
               // Re-render the fixed category bar so group categories show up
               // when user navigates to Live TV tab (channels may already be loaded).
+              // Categories come ONLY from M3U group-title (channel.group).
               if (typeof renderFixedCategoryBar === 'function' && allChannels.length > 0) {
                   var cats = new Set(["All"]);
-                  allChannels.forEach(function(c) { cats.add(c.group); });
-                  if (adminCategories && adminCategories.length > 0) {
-                      adminCategories.forEach(function(cat) { cats.add(cat); });
-                  }
+                  allChannels.forEach(function(c) { if (c.group) cats.add(c.group); });
                   renderFixedCategoryBar(Array.from(cats).sort());
               }
               var _isWideScreen = window.innerWidth >= 1024;
