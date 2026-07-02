@@ -105,8 +105,7 @@ if (request.headers.get("X-Forwarded-Proto") !== "https") {
 
 // Allowed Origin
 const allowedOrigins = [
-  "https://ai-multitool.pages.dev/aitools/ai-tv-pro",
-  "/"
+  "https://ai-multitool.pages.dev"
 ];
 
 const origin = request.headers.get("Origin");
