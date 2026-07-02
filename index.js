@@ -37,6 +37,48 @@ const MAX_REDIRECTS = 5;
 const DEFAULT_RATE_LIMIT_MAX = 120;
 const DEFAULT_RATE_LIMIT_WINDOW_SEC = 60;
 
+// VLC-like User-Agent pool. When upstream returns 403/401, we retry with the
+// next UA in this list. The first UA that works is cached for that host.
+const USER_AGENT_POOL = [
+  "VLC/3.0.18 LibVLC/3.0.18",
+  "VLC/3.0.17 LibVLC/3.0.17",
+  "VLC/3.0.16 LibVLC/3.0.16",
+  "Lavf/58.76.100",
+  "Lavf/58.45.100",
+  "Lavf/57.83.103",
+  "mpv 0.33.1",
+  "mpv 0.32.0",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+  "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+  "AppleCoreMedia/1.0.0.20A362 (iPhone; U; CPU OS 16_0 like Mac OS X; en_us)",
+  "ExoPlayer",
+  "TVirl/7.6.2 (Linux;Android 11) ExoPlayerLib/2.18.5",
+  " Kodi/20.0 (Linux; Android 11) Krypton",
+];
+
+// Per-host UA cache (so we don't have to try every UA on every request).
+const _hostUaCache = new Map();
+
+// Realistic client IPs for X-Forwarded-For spoofing. Many IPTV portals check
+// this header to "trust" the request. We rotate through residential-looking IPs.
+const CLIENT_IP_POOL = [
+  "192.168.1." + (Math.floor(Math.random() * 254) + 1),
+  "10.0.0." + (Math.floor(Math.random() * 254) + 1),
+  "172.16.0." + (Math.floor(Math.random() * 254) + 1),
+  "100.64.0." + (Math.floor(Math.random() * 254) + 1),
+];
+
+// Realistic Origin/Referer pairs to try when channel doesn't supply one.
+const REFERER_FALLBACKS = (host) => [
+  "http://" + host + "/",
+  "https://" + host + "/",
+  "http://" + host + "/c/c/",
+  "http://" + host + "/portal.php",
+  "https://" + host + "/stalker_portal/",
+];
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
@@ -227,6 +269,19 @@ export default {
       } else {
         // Binary passthrough: stream body directly, no buffering.
         const headers = passthroughHeaders(upstreamResp.headers, pathLower);
+        // VLC-like content-type detection by URL query string for stream URLs
+        // that don't have a file extension (e.g. /play/live.php?...&extension=ts).
+        if (!headers.get("content-type") || headers.get("content-type").includes("octet-stream") || headers.get("content-type") === "text/html") {
+          const extParamMatch = (targetUrl.search || "").match(/extension=([a-z0-9]+)/i);
+          const urlLow = targetUrl.toString().toLowerCase();
+          if (extParamMatch) {
+            const ext = "." + extParamMatch[1].toLowerCase();
+            if (MIME_MAP[ext]) headers.set("Content-Type", MIME_MAP[ext]);
+          } else if (urlLow.includes('/live/play/') || urlLow.includes('/live/stream')) {
+            // Many IPTV portals serve raw MPEG-TS at /live/play/<token>/<id>
+            headers.set("Content-Type", MIME_MAP[".ts"]);
+          }
+        }
         if (!headers.has("Cache-Control")) {
           headers.set("Cache-Control", "public, max-age=86400, immutable");
         }
@@ -267,16 +322,41 @@ export default {
 /**
  * Fetches the target URL with timeout + manual redirect following
  * (301/302/303/307/308), re-validating the host allowlist on every hop.
+ *
+ * VLC-like behavior: if the upstream returns 401/403, we retry with
+ * different User-Agent + Referer combinations from the pool. The first
+ * combination that works is cached per-host for subsequent requests.
  */
 async function fetchUpstream(request, targetUrl, extraParams, env) {
   let currentUrl = targetUrl;
   let redirects = 0;
+  let uaRetryIdx = 0;
+  let refRetryIdx = -1;
+
+  // Build the initial UA list: explicit channel UA first, then the pool.
+  const uaList = [];
+  if (extraParams.ua) uaList.push(decodeURIComponent(extraParams.ua));
+  const cachedUa = _hostUaCache.get(targetUrl.hostname);
+  if (cachedUa) uaList.push(cachedUa);
+  for (const ua of USER_AGENT_POOL) {
+    if (!uaList.includes(ua)) uaList.push(ua);
+  }
+
+  // Build the Referer list: explicit channel ref first, then fallbacks.
+  const refList = [];
+  if (extraParams.ref) refList.push(decodeURIComponent(extraParams.ref));
+  const cachedRef = _hostUaCache.get(targetUrl.hostname + ":ref");
+  if (cachedRef) refList.push(cachedRef);
+  // We'll lazily add fallback referers only if we hit a 403.
 
   while (true) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
 
-    const upstreamHeaders = buildUpstreamHeaders(request, extraParams);
+    const currentUa = uaList[uaRetryIdx] || uaList[0];
+    const currentRef = refRetryIdx >= 0 ? (refList[refRetryIdx] || null) : (refList[0] || null);
+
+    const upstreamHeaders = buildUpstreamHeaders(request, extraParams, currentUa, currentRef, targetUrl.hostname);
 
     let resp;
     try {
@@ -284,7 +364,7 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
         method: request.method === "HEAD" ? "HEAD" : "GET",
         headers: upstreamHeaders,
         redirect: "manual",
-        cf: { cacheEverything: false },
+        cf: { cacheEverything: false, scrapeShield: false },
         signal: controller.signal,
       });
     } finally {
@@ -305,14 +385,45 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
       }
       currentUrl = nextUrl;
       redirects += 1;
+      // Keep the same UA/Ref through the redirect chain (origin-server side
+      // session).
       continue;
+    }
+
+    // VLC-like retry: 401/403/429 → try next UA, then next Referer fallback.
+    if ((resp.status === 401 || resp.status === 403 || resp.status === 429) && uaRetryIdx < uaList.length - 1) {
+      uaRetryIdx += 1;
+      // Close body to free resources
+      try { await resp.arrayBuffer(); } catch (e) {}
+      continue;
+    }
+    if ((resp.status === 401 || resp.status === 403) && refRetryIdx === -1) {
+      // Add fallback referers and try them.
+      for (const r of REFERER_FALLBACKS(targetUrl.hostname)) {
+        if (!refList.includes(r)) refList.push(r);
+      }
+      refRetryIdx = 0;
+      try { await resp.arrayBuffer(); } catch (e) {}
+      continue;
+    }
+    if ((resp.status === 401 || resp.status === 403) && refRetryIdx < refList.length - 1) {
+      refRetryIdx += 1;
+      uaRetryIdx = 0; // restart UA rotation with new referer
+      try { await resp.arrayBuffer(); } catch (e) {}
+      continue;
+    }
+
+    // Success! Cache the winning UA + Referer for this host.
+    if (resp.ok || resp.status === 206 || resp.status === 304) {
+      _hostUaCache.set(targetUrl.hostname, currentUa);
+      if (currentRef) _hostUaCache.set(targetUrl.hostname + ":ref", currentRef);
     }
 
     return resp;
   }
 }
 
-function buildUpstreamHeaders(request, extraParams) {
+function buildUpstreamHeaders(request, extraParams, currentUa, currentRef, targetHost) {
   const headers = new Headers();
 
   for (const name of REQUEST_HEADERS_TO_FORWARD) {
@@ -320,38 +431,35 @@ function buildUpstreamHeaders(request, extraParams) {
     if (val) headers.set(name, val);
   }
 
-  // Deliberately request identity encoding from upstream: Workers'
-  // fetch() auto-decodes gzip/br anyway, and re-forwarding the raw
-  // Accept-Encoding can cause double-compression edge cases. Cloudflare's
-  // edge will still auto-compress the final response to the client based
-  // on the client's own Accept-Encoding header.
+  // Identity encoding — see compression notes above.
   headers.set("Accept-Encoding", "identity");
 
-  headers.set(
-    "User-Agent",
-    extraParams.ua
-      ? decodeURIComponent(extraParams.ua)
-      : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-  );
-  if (extraParams.ref) headers.set("Referer", decodeURIComponent(extraParams.ref));
+  // User-Agent (VLC-like, override-able per-channel via &ua=)
+  headers.set("User-Agent", currentUa || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+
+  // Referer
+  if (currentRef) headers.set("Referer", currentRef);
+
+  // Origin (separate from Referer)
   if (extraParams.origin) headers.set("Origin", decodeURIComponent(extraParams.origin));
+  else if (currentRef) {
+    // Auto-derive Origin from Referer so the two headers match
+    try {
+      const refUrl = new URL(currentRef);
+      headers.set("Origin", refUrl.origin);
+    } catch (e) {}
+  }
 
   // VLC-like per-channel cookie (from #EXTVLCOPT:http-cookie=...).
-  // If client also sent a Cookie header, we merge them.
   if (extraParams.cookie) {
     const decodedCookie = decodeURIComponent(extraParams.cookie);
     const existingCookie = headers.get("Cookie") || "";
     headers.set("Cookie", existingCookie ? existingCookie + "; " + decodedCookie : decodedCookie);
   }
 
-  // Generic custom HTTP headers, semicolon-separated "Name: value" pairs.
-  // Lets M3U files declare arbitrary headers like X-Session, X-Signature,
-  // Authorization, etc. via #EXTVLCOPT:http-header=Name: value
+  // Generic custom HTTP headers (semicolon-separated "Name: value" pairs)
   if (extraParams.headers) {
     const decodedHeaders = decodeURIComponent(extraParams.headers);
-    // Split on semicolons but be lenient about values containing colons.
-    // Each entry MUST be "Header-Name: value" (colon is the separator).
-    // To allow multiple headers, separate with ";;" (double semicolon).
     const headerEntries = decodedHeaders.split(/;;|;\s*(?=[A-Za-z][\w-]*:)/);
     for (const entry of headerEntries) {
       const trimmed = entry.trim();
@@ -361,13 +469,22 @@ function buildUpstreamHeaders(request, extraParams) {
       const hdrName = trimmed.substring(0, colonIdx).trim();
       const hdrVal = trimmed.substring(colonIdx + 1).trim();
       if (hdrName) {
-        // Skip headers that would break the request or are security-sensitive
         const lower = hdrName.toLowerCase();
         if (lower === "host" || lower === "content-length" || lower === "connection") continue;
         headers.set(hdrName, hdrVal);
       }
     }
   }
+
+  // VLC-style headers that help bypass naive portal restrictions
+  if (!headers.has("Accept")) headers.set("Accept", "*/*");
+  if (!headers.has("Accept-Language")) headers.set("Accept-Language", "en-US,en;q=0.9");
+  if (!headers.has("X-Forwarded-For")) {
+    headers.set("X-Forwarded-For", CLIENT_IP_POOL[Math.floor(Math.random() * CLIENT_IP_POOL.length)]);
+  }
+  // Some portals (Stalker/ministra) check these to recognize set-top-box clients.
+  if (!headers.has("X-Real-IP")) headers.set("X-Real-IP", CLIENT_IP_POOL[Math.floor(Math.random() * CLIENT_IP_POOL.length)]);
+  if (!headers.has("X-Requested-With")) headers.set("X-Requested-With", "XMLHttpRequest");
 
   return headers;
 }

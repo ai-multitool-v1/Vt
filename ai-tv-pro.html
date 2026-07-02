@@ -4942,14 +4942,16 @@
          if (ch && ch.http_cookie) qs += '&cookie=' + encodeURIComponent(ch.http_cookie);
          else if (ch && ch.cookie) qs += '&cookie=' + encodeURIComponent(ch.cookie);
          // Generic custom headers (semicolon-separated "Header-Name: value" pairs)
-         if (ch && ch.http_headers) qs += '&headers=' + encodeURIComponent(ch.http_headers);
+         var headerParts = [];
+         if (ch && ch.http_headers) headerParts.push(ch.http_headers);
          // Session / signature / token forwarded as extra custom headers
-         var extraHeaders = [];
-         if (ch && ch.session) extraHeaders.push('X-Session: ' + ch.session);
-         if (ch && ch.signature) extraHeaders.push('X-Signature: ' + ch.signature);
-         if (ch && ch.token && !ch.http_cookie) extraHeaders.push('X-Token: ' + ch.token);
-         if (extraHeaders.length > 0) {
-            qs += '&headers=' + encodeURIComponent(extraHeaders.join(';'));
+         if (ch && ch.session) headerParts.push('X-Session: ' + ch.session);
+         if (ch && ch.signature) headerParts.push('X-Signature: ' + ch.signature);
+         if (ch && ch.token) headerParts.push('X-Token: ' + ch.token);
+         // Authorization header if present
+         if (ch && ch.authorization) headerParts.push('Authorization: ' + ch.authorization);
+         if (headerParts.length > 0) {
+            qs += '&headers=' + encodeURIComponent(headerParts.join(';'));
          }
          return STREAM_PROXY_BASE + qs;
       }
@@ -5204,6 +5206,9 @@
             'referer': 'referer',
             'http-referrer': 'referer',
             'http-user-agent': 'user_agent',
+            'http-origin': 'origin_header',
+            'authorization': 'authorization',
+            'auth': 'authorization',
             'stream-type': 'stream_type',
             'type': 'stream_type'
          };
