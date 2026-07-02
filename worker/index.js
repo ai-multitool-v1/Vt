@@ -110,6 +110,7 @@ const allowedOrigins = [
 
 const origin = request.headers.get("Origin");
 
+
 if (origin && !allowedOrigins.includes(origin)) {
   return jsonResponse(
     { ok: false, message: "Forbidden" },
