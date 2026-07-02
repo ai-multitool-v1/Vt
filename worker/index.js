@@ -123,7 +123,7 @@ if (origin && !allowedOrigins.includes(origin)) {
     }
 
     if (!["GET", "HEAD"].includes(request.method)) {
-      return jsonResponse({ ok: false, message: "Only GET/HEAD are supported" }, 405);
+      return jsonResponse({ ok: false, message: "access denied" }, 405);
     }
 
     let targetUrl;
@@ -133,7 +133,7 @@ if (origin && !allowedOrigins.includes(origin)) {
       const rawTarget = reqUrl.searchParams.get("url");
       if (!rawTarget) {
         return jsonResponse(
-          { ok: false, message: "Missing 'url' param. Usage: /?url=<encoded target>" },
+          { ok: false, message: "internal server error, server not connected!" },
           400
         );
       }
@@ -146,14 +146,14 @@ if (origin && !allowedOrigins.includes(origin)) {
       logCtx.target = targetUrl.toString();
 
       if (!["http:", "https:"].includes(targetUrl.protocol)) {
-        return jsonResponse({ ok: false, message: "Only http/https targets allowed" }, 400);
+        return jsonResponse({ ok: false, message: "error" }, 400);
       }
 
       // ---- Security: token auth ----
       if (env.PROXY_TOKEN) {
         const token = reqUrl.searchParams.get("token");
         if (token !== env.PROXY_TOKEN) {
-          return jsonResponse({ ok: false, message: "Invalid or missing token" }, 401);
+          return jsonResponse({ ok: false, message: " বাল পাকনামু চুদাও👽🤣" }, 401);
         }
       }
 
