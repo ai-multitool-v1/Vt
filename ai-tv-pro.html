@@ -4903,7 +4903,7 @@
       var bfModeEnabled = (localStorage.getItem('aitv_bf_mode') === 'on');
       // Cloudflare Worker proxy for HTTP-protocol streams (and mixed-content scenarios).
       // Deployed via wrangler; see worker/index.js and wrangler.toml.
-      var STREAM_PROXY_BASE = 'https://ai-multitools.workers.dev/';
+      var STREAM_PROXY_BASE = 'https://vt.ai-multitools.workers.dev/';
       function buildProxiedUrl(originalUrl, ch) {
          if (!originalUrl) return originalUrl;
          // Already proxied? don't double-wrap.
