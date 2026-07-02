@@ -552,7 +552,6 @@
       @media (min-width: 1024px) {
          #mainContent {
             flex-direction: row !important;
-            flex-wrap: wrap !important;
          }
          #playerPanel {
             order: 2;
@@ -573,17 +572,13 @@
             overflow-y: auto;
             border-right: 1px solid rgba(255, 255, 255, 0.06);
          }
-         /* Category bar spans full width below both columns on desktop */
+         /* Category bar sits below player controls inside playerPanel */
          #fixedCategoryBar {
-            order: 3;
-            width: 100% !important;
-            max-width: 100% !important;
-            position: sticky;
-            bottom: 0;
+            order: 2;
+            flex-shrink: 0;
+            position: relative;
+            bottom: auto;
             top: auto;
-            z-index: 30;
-            border-top: 1px solid rgba(0, 243, 255, 0.15);
-            border-bottom: none;
          }
          #playerPanel #playerWrapper {
             position: relative !important;
@@ -681,7 +676,7 @@
          #proxyToggleBtn .proxy-toggle-label { display: none; }
          #proxyToggleBtn { padding: 6px 10px; }
       }
-      /* Fixed horizontal category bar — sits right below player, full width */
+      /* Fixed horizontal category bar — sits right below player controls */
       #fixedCategoryBar {
          display: flex;
          gap: 8px;
@@ -699,7 +694,6 @@
          scroll-behavior: smooth;
          -webkit-overflow-scrolling: touch;
          width: 100%;
-         order: 3;
       }
       #fixedCategoryBar.hidden { display: none !important; }
       #fixedCategoryBar::-webkit-scrollbar { display: none; }
@@ -2649,6 +2643,17 @@
        stroke-width: 2.5;
        transition: transform var(--smooth-timing);
    }
+   /* FIFA Live tab trophy icon — uses fill instead of stroke, so it needs
+      explicit sizing to render visibly at the same scale as other icons */
+   .tab svg[viewBox="0 0 600.000000 530.000000"] {
+       width: 22px;
+       height: 22px;
+       fill: currentColor;
+       color: #facc15; /* gold */
+   }
+   .tab.active svg[viewBox="0 0 600.000000 530.000000"] {
+       color: #fde047; /* brighter gold when active */
+   }
    .tab:not(.active):hover svg { transform: scale(1.1); }
    .tab-text-wrapper {
        display: grid;
@@ -3215,7 +3220,7 @@
    <header class="bg-black/90 backdrop-blur-md border-b border-white/10 sticky top-0 z-50 h-16 flex-shrink-0">
       <div class="container mx-auto px-4 h-full flex items-center justify-between">
          <div class="flex items-center gap-3">
-            <img src="/logo.svg" alt="AI TV Pro" class="header-logo" onerror="this.style.display='none'">
+            <img src="https://i.postimg.cc/J0p7tNVv/Picsart-26-07-02-22-17-12-974.png" alt="AI TV Pro" class="header-logo" onerror="this.style.display='none'">
          </div>
          <div class="flex items-center gap-3">
             <button id="proxyToggleBtn" class="flex items-center gap-2 bg-[#111] hover:bg-[#222] border border-white/10 px-3 py-1.5 rounded-full text-xs font-bold text-gray-300 transition" title="Toggle Proxy (All Streams)">
@@ -3621,10 +3626,9 @@
             </div>
             <div class="speed-meter" id="speedMeter" style="display:none;">↓ 0 Mbps</div>
          </div>
-      </div>
-      </div>
       <div id="fixedCategoryBar" class="hidden">
-         <!-- Populated dynamically by renderFixedCategoryBar() — sits right below player -->
+         <!-- Populated dynamically by renderFixedCategoryBar() — right below player controls -->
+      </div>
       </div>
       <div class="flex-1 min-h-0 overflow-y-auto p-4 pb-16" id="channelPanel">
          <div class="container mx-auto">
@@ -3735,10 +3739,10 @@
                <div class="tab-text-wrapper"><span class="tab-text-content">Live Tv</span></div>
             </button>
             <button class="tab" onclick="selectTab(this)">
-               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path>
-                  <path d="M2 12h20"></path>
+               <svg version="1.0" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 600.000000 530.000000" preserveAspectRatio="xMidYMid meet" fill="currentColor" stroke="none">
+                  <g transform="translate(0.000000,530.000000) scale(0.100000,-0.100000)">
+                     <path d="M2971 4409 c-406 -79 -709 -473 -676 -876 6 -72 5 -83 -8 -83 -72 0 -29 -192 114 -507 67 -150 99 -214 233 -464 154 -290 181 -542 86 -814 -17 -49 -78 -187 -135 -305 -115 -238 -145 -330 -148 -451 -2 -81 -2 -81 32 -110 162 -135 897 -167 1225 -53 111 38 136 66 136 147 0 121 -34 224 -150 451 -177 348 -212 456 -213 651 0 173 57 333 195 545 255 390 402 820 329 960 -12 23 -21 59 -21 85 0 394 -282 738 -672 820 -75 16 -255 18 -327 4z m217 -61 c27 -27 14 -102 -32 -190 -69 -131 -69 -180 0 -285 39 -61 40 -64 16 -86 -18 -16 -20 -14 -43 34 -14 31 -46 72 -80 103 -70 64 -74 72 -104 206 -13 60 -31 123 -40 139 -8 17 -15 35 -15 40 0 29 272 65 298 39z m189 -33 c106 -33 127 -49 119 -88 -8 -40 -38 -71 -93 -98 -87 -42 -98 -79 -53 -169 35 -70 36 -84 10 -141 -24 -55 -25 -122 -1 -174 23 -50 39 -64 95 -78 33 -9 51 -21 68 -47 19 -29 75 -67 120 -82 5 -2 13 -54 17 -115 9 -119 30 -175 71 -188 29 -9 25 -19 -25 -63 -52 -46 -135 -63 -185 -37 -67 35 -123 139 -168 310 -52 196 -108 251 -182 177 -53 -54 -57 -92 -26 -275 15 -89 29 -168 29 -176 3 -26 -135 -63 -248 -69 -100 -4 -245 24 -245 47 0 15 51 85 93 129 49 50 53 87 28 222 -19 101 -13 120 56 169 55 39 113 110 113 138 0 8 -23 39 -52 69 -42 45 -52 63 -59 105 -16 103 -61 139 -151 120 -69 -14 -116 2 -152 52 l-21 29 60 56 c72 67 201 153 219 146 19 -7 30 -37 66 -169 42 -155 61 -193 116 -227 42 -26 104 -124 104 -164 0 -6 9 -19 20 -29 18 -16 20 -16 54 5 86 53 98 109 42 200 -58 94 -58 118 4 235 46 89 51 104 48 152 -4 64 -3 64 109 28z m273 -161 c240 -227 313 -562 190 -871 -36 -90 -41 -97 -67 -89 -30 10 -40 43 -48 154 -9 126 -17 141 -80 161 -44 14 -53 22 -75 66 -24 48 -27 50 -73 55 -60 7 -79 26 -84 87 -4 37 0 60 16 91 28 54 27 99 -5 157 -33 63 -29 85 21 108 56 26 93 65 107 109 15 50 16 49 98 -28z m-1062 -214 c13 -6 49 -11 80 -10 32 0 68 1 81 2 26 0 41 -16 41 -47 0 -50 24 -102 63 -138 50 -46 44 -68 -33 -124 -112 -82 -120 -107 -84 -264 19 -86 14 -111 -37 -166 -22 -24 -47 -59 -56 -78 -22 -47 -25 -46 -109 40 -197 203 -229 486 -88 774 l46 93 36 -35 c21 -19 48 -40 60 -47z m697 -605 c60 -254 172 -394 304 -378 86 10 110 -43 50 -111 -50 -58 -17 -105 38 -54 53 48 74 122 48 171 -14 26 -13 28 33 71 60 56 113 146 153 258 39 108 47 106 24 -4 -36 -177 -138 -402 -306 -670 -116 -185 -178 -308 -244 -488 -120 -326 -372 -720 -460 -720 -35 0 -203 28 -216 35 -4 3 10 44 32 90 21 47 47 113 56 148 14 49 40 94 125 212 366 510 411 731 287 1389 -21 111 -20 173 3 187 25 16 47 -26 73 -136z m-852 -161 c161 -219 408 -292 689 -204 34 11 64 17 66 15 10 -10 17 -229 11 -312 -16 -188 -99 -389 -269 -647 l-85 -129 -6 119 c-10 198 -55 336 -183 572 -162 298 -304 615 -321 717 -6 40 -6 40 28 -21 18 -34 50 -84 70 -110z m1008 -1458 c11 -39 41 -115 66 -169 26 -53 44 -100 41 -103 -16 -15 -183 -35 -343 -41 l-179 -6 32 39 c115 137 231 311 300 450 l37 75 12 -87 c7 -48 22 -119 34 -158z m-656 -493 c217 -32 623 -21 845 23 25 5 29 1 63 -75 43 -94 44 -99 15 -105 -357 -77 -725 -82 -1072 -16 -54 11 -101 21 -103 23 -2 2 14 43 34 91 l38 88 35 -6 c19 -4 85 -14 145 -23z m-148 -362 c322 -60 717 -57 1031 7 90 19 92 19 92 1 0 -146 -1001 -176 -1227 -37 -33 20 -48 66 -18 55 8 -4 63 -15 122 -26z"/>
+                  </g>
                </svg>
                <div class="tab-text-wrapper"><span class="tab-text-content">FIFA Live</span></div>
             </button>
@@ -4720,7 +4724,7 @@
          }
       }
       function injectAdScript(container, code) {
-         if (!code) return;
+         if (!code || !container) return;
          try {
             var lowerCode = code.toLowerCase();
             var hasIframe = lowerCode.indexOf('<iframe') !== -1;
@@ -4738,6 +4742,10 @@
                      this.style.height = h + 'px';
                   } catch (e) {}
                };
+               sandboxedIframe.onerror = function() {
+                  console.warn("[AdScripts] iframe load failed for ad");
+                  container.style.display = 'none';
+               };
                return;
             }
             var writeBuffer = '';
@@ -4747,10 +4755,10 @@
             var origClose = document.close;
             var writeTarget = container;
             document.write = function(str) {
-               writeBuffer += str;
+               try { writeBuffer += String(str || ''); } catch (e) {}
             };
             document.writeln = function(str) {
-               writeBuffer += str + '\n';
+               try { writeBuffer += String(str || '') + '\n'; } catch (e) {}
             };
             document.open = function() {
                writeBuffer = '';
@@ -4776,37 +4784,43 @@
                var parsedDoc = (new DOMParser()).parseFromString(code, "text/html");
                var allScripts = parsedDoc.querySelectorAll("script");
                allScripts.forEach(function(s, idx) {
-                  var newScript = document.createElement("script");
-                  for (var i = 0; i < s.attributes.length; i++) {
-                     var attr = s.attributes[i];
-                     try {
-                        if (attr.name !== "src" && attr.name !== "async") {
-                           newScript.setAttribute(attr.name, attr.value);
-                        }
-                     } catch (e) {}
-                  }
-                  if (s.src) {
-                     newScript.src = s.src;
-                     var htmlHasAsync = s.hasAttribute("async");
-                     var htmlHasDefer = s.hasAttribute("defer");
-                     if (htmlHasAsync) {
-                        newScript.async = true;
-                     } else if (htmlHasDefer) {
-                        newScript.defer = true;
-                        newScript.async = false;
-                     } else {
-                        newScript.async = false;
+                  try {
+                     var newScript = document.createElement("script");
+                     for (var i = 0; i < s.attributes.length; i++) {
+                        var attr = s.attributes[i];
+                        try {
+                           // Copy ALL attributes except src/async (handled below)
+                           if (attr.name !== "src" && attr.name !== "async" && attr.name !== "defer") {
+                              newScript.setAttribute(attr.name, attr.value);
+                           }
+                        } catch (e) {}
                      }
-                  } else {
-                     newScript.textContent = s.textContent;
+                     if (s.src) {
+                        newScript.src = s.src;
+                        var htmlHasAsync = s.hasAttribute("async");
+                        var htmlHasDefer = s.hasAttribute("defer");
+                        if (htmlHasAsync) {
+                           newScript.async = true;
+                        } else if (htmlHasDefer) {
+                           newScript.defer = true;
+                           newScript.async = false;
+                        } else {
+                           newScript.async = false;
+                        }
+                     } else {
+                        // Inline script — copy textContent safely
+                        newScript.textContent = s.textContent || '';
+                     }
+                     if (s.type && s.type !== '') {
+                        newScript.type = s.type;
+                     }
+                     newScript.onerror = function(err) {
+                        console.warn("[AdScripts] script load error:", s.src || "inline script #" + idx, err);
+                     };
+                     container.appendChild(newScript);
+                  } catch (scriptErr) {
+                     console.warn("[AdScripts] Failed to inject script #" + idx + ":", scriptErr);
                   }
-                  if (s.type && s.type !== '') {
-                     newScript.type = s.type;
-                  }
-                  newScript.onerror = function(err) {
-                     console.warn("Ad script load error:", s.src || "inline script", err);
-                  };
-                  container.appendChild(newScript);
                });
             } finally {
                if (writeBuffer) {
@@ -4823,11 +4837,12 @@
                document.close = origClose;
             }
          } catch (e) {
-            console.warn("injectAdScript error:", e);
+            console.warn("[AdScripts] injectAdScript error:", e);
             try {
                container.innerHTML = code;
             } catch (e2) {
-               console.warn("injectAdScript fallback error:", e2);
+               console.warn("[AdScripts] fallback innerHTML failed:", e2);
+               container.style.display = 'none';
             }
          }
       }
@@ -6087,8 +6102,11 @@
                };
                bar.appendChild(chip);
             });
-            var allChip = bar.querySelector('.cat-chip[data-cat="All"]');
-            if (allChip) allChip.classList.add("active");
+            // Restore the previously-selected category (if any)
+            var savedCat = window._selectedCategory || "All";
+            var savedChip = bar.querySelector('.cat-chip[data-cat="' + savedCat + '"]');
+            if (savedChip) savedChip.classList.add("active");
+            else if (bar.querySelector('.cat-chip[data-cat="All"]')) bar.querySelector('.cat-chip[data-cat="All"]').classList.add("active");
             bar.classList.add("hidden");
             return;
          }
@@ -6113,15 +6131,22 @@
             };
             bar.appendChild(chip);
          });
-         var allChip = bar.querySelector('.cat-chip[data-cat="All"]');
-         if (allChip) allChip.classList.add("active");
+         // Restore the previously-selected category (if any)
+         var savedCat2 = window._selectedCategory || "All";
+         var savedChip2 = bar.querySelector('.cat-chip[data-cat="' + savedCat2 + '"]');
+         if (savedChip2) savedChip2.classList.add("active");
+         else if (bar.querySelector('.cat-chip[data-cat="All"]')) bar.querySelector('.cat-chip[data-cat="All"]').classList.add("active");
       }
       // Filter the channel grid by group category (used by the fixed bar chips).
       // "All" shows every channel; any other value filters by c.group === cat.
       // Admin categories are loaded via loadAdminCategoryOnly for full fetch.
+      // Track the currently-selected category so it persists across re-renders.
+      window._selectedCategory = "All";
       function _filterGridByCategory(cat) {
+         window._selectedCategory = cat || "All";
          if (!cat || cat === "All") {
             renderGrid(allChannels);
+            _setFixedCategoryBarActive("All");
             return;
          }
          // Check if it's an admin category (needs server fetch for full list)
@@ -6132,6 +6157,7 @@
             } else {
                loadAdminCategoryOnly(cat);
             }
+            _setFixedCategoryBarActive(cat);
             return;
          }
          // Local filter by group
@@ -6139,6 +6165,7 @@
             return c.group === cat;
          });
          renderGrid(filtered);
+         _setFixedCategoryBarActive(cat);
       }
       function _setFixedCategoryBarActive(cat) {
          var bar = document.getElementById("fixedCategoryBar");
