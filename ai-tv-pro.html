@@ -6798,9 +6798,8 @@
                   window._mpegtsPlayer = null;
                }
                try {
-                  // Use mpegts.js default config — no custom config needed.
-                  // The default settings are already optimized for smooth live playback.
-                  // Custom configs (stash buffer, latency chasing, etc.) caused stuttering.
+                  // Match the working demo HTML exactly — no custom config, no extra listeners.
+                  // mpegts.js defaults are already optimized for smooth live .ts playback.
                   window._mpegtsPlayer = mpegts.createPlayer({
                      type: 'mpegts',
                      isLive: true,
@@ -6808,98 +6807,12 @@
                   });
                   window._mpegtsPlayer.on(mpegts.Events.ERROR, function(errType, errDetail) {
                      console.log('[mpegts.js] error:', errType, errDetail);
-                     if (errType === mpegts.ErrorTypes.NETWORK_ERROR) {
-                        // Network error: retry once before giving up. Many .ts
-                        // servers have intermittent connection resets.
-                        if (!window._mpegtsRetried) {
-                           window._mpegtsRetried = true;
-                           console.log('[mpegts.js] Network error — retrying once...');
-                           try { window._mpegtsPlayer.destroy(); } catch (eR) {}
-                           window._mpegtsPlayer = null;
-                           setTimeout(function() {
-                              try {
-                                 window._mpegtsPlayer = mpegts.createPlayer({
-                                    type: 'mpegts', isLive: true, url: _effectiveUrl
-                                 });
-                                 window._mpegtsPlayer.on(mpegts.Events.ERROR, function(e2, d2) {
-                                    console.log('[mpegts.js] retry error:', e2, d2);
-                                    try { window._mpegtsPlayer.destroy(); } catch (eMts2) {}
-                                    window._mpegtsPlayer = null;
-                                    if (window._streamLoadTimeout) { clearTimeout(window._streamLoadTimeout); window._streamLoadTimeout = null; }
-                                    playerLoader.classList.remove("hidden");
-                                    playerLoader.classList.add("loader-offline");
-                                    playerStatusText.innerText = "Stream Offline";
-                                 });
-                                 window._mpegtsPlayer.attachMediaElement(videoPlayer);
-                                 window._mpegtsPlayer.load();
-                                 window._mpegtsPlayer.play();
-                              } catch (eRetry) {
-                                 console.log('[mpegts.js] retry failed:', eRetry);
-                                 playerLoader.classList.remove("hidden");
-                                 playerLoader.classList.add("loader-offline");
-                                 playerStatusText.innerText = "Stream Offline";
-                              }
-                           }, 500);
-                           return;
-                        }
-                        // Already retried — show offline
-                        try { window._mpegtsPlayer.destroy(); } catch (eMts2) {}
-                        window._mpegtsPlayer = null;
-                        if (window._streamLoadTimeout) {
-                           clearTimeout(window._streamLoadTimeout);
-                           window._streamLoadTimeout = null;
-                        }
-                        playerLoader.classList.remove("hidden");
-                        playerLoader.classList.add("loader-offline");
-                        playerStatusText.innerText = "Stream Offline";
-                     } else if (errType === mpegts.ErrorTypes.MEDIA_ERROR) {
-                        // Media error: try to recover by destroying + recreating
-                        try { window._mpegtsPlayer.destroy(); } catch (eMts2) {}
-                        window._mpegtsPlayer = null;
-                        if (window._streamLoadTimeout) {
-                           clearTimeout(window._streamLoadTimeout);
-                           window._streamLoadTimeout = null;
-                        }
-                        playerLoader.classList.remove("hidden");
-                        playerLoader.classList.add("loader-offline");
-                        playerStatusText.innerText = "Stream Offline";
-                     }
-                  });
-                  window._mpegtsPlayer.on(mpegts.Events.LOADING_COMPLETE, function() {
-                     console.log('[mpegts.js] loading complete');
                   });
                   window._mpegtsPlayer.attachMediaElement(videoPlayer);
-                  videoPlayer.addEventListener("loadedmetadata", function() {
-                     if (window._streamLoadTimeout) {
-                        clearTimeout(window._streamLoadTimeout);
-                        window._streamLoadTimeout = null;
-                     }
-                     playerLoader.classList.add("hidden");
-                     playerLoader.classList.remove("loader-offline");
-                     var sm = document.getElementById("speedMeter");
-                     if (sm) sm.style.display = "none";
-                     videoPlayer.play().catch(function(e) {
-                        console.log("Auto-play blocked", e)
-                     });
-                  }, { once: true });
-                  videoPlayer.addEventListener("error", function() {
-                     tryIframeFallback(ch.url);
-                  }, { once: true });
                   window._mpegtsPlayer.load();
                   window._mpegtsPlayer.play();
-                  var _mtsPlayTimeout = setTimeout(function() {
-                     if (!playerLoader.classList.contains('hidden')) {
-                        try { window._mpegtsPlayer.destroy(); } catch (eMts3) {}
-                        window._mpegtsPlayer = null;
-                        tryIframeFallback(ch.url);
-                     }
-                  }, 12000);
-                  window._mpegtsPlayTimeout = _mtsPlayTimeout;
+                  // Hide loader once playback actually starts
                   videoPlayer.addEventListener("playing", function() {
-                     if (window._mpegtsPlayTimeout) {
-                        clearTimeout(window._mpegtsPlayTimeout);
-                        window._mpegtsPlayTimeout = null;
-                     }
                      if (window._streamLoadTimeout) {
                         clearTimeout(window._streamLoadTimeout);
                         window._streamLoadTimeout = null;
@@ -7299,6 +7212,9 @@
          }
          function checkBufferAndRecover() {
             if (!videoPlayer || videoPlayer.style.display === "none") return;
+            // Skip auto-recovery when mpegts.js is handling playback — it has its
+            // own buffer management and our seeking/recovering would cause stutter.
+            if (window._mpegtsPlayer) return;
             if (!videoPlayer.paused && videoPlayer.readyState >= 3) {
                _isRecovering = false;
                _recoverAttempts = 0;
@@ -7434,6 +7350,8 @@
          function fixDrift() {
             if (!bfModeEnabled) return;
             if (!videoPlayer || videoPlayer.style.display === "none") return;
+            // Skip drift fixing when mpegts.js is handling playback
+            if (window._mpegtsPlayer) return;
             if (videoPlayer.paused) return;
             var now = Date.now();
             if (now - _lastSeekTime < MIN_SEEK_GAP) return;
