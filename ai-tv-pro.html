@@ -6798,22 +6798,13 @@
                   window._mpegtsPlayer = null;
                }
                try {
+                  // Use mpegts.js default config — no custom config needed.
+                  // The default settings are already optimized for smooth live playback.
+                  // Custom configs (stash buffer, latency chasing, etc.) caused stuttering.
                   window._mpegtsPlayer = mpegts.createPlayer({
                      type: 'mpegts',
                      isLive: true,
                      url: _effectiveUrl
-                  }, {
-                     enableStashBuffer: true,       // enable buffer for smooth playback
-                     stashInitialSize: 1024,         // 1MB initial buffer (was 128KB — too small)
-                     autoCleanupSourceBuffer: true,
-                     autoCleanupMaxBackwardDuration: 10,
-                     autoCleanupMinBackwardDuration: 5,
-                     liveBufferLatencyChasing: true,  // chase live edge
-                     liveBufferLatencyMaxLatency: 5,   // 5s max latency (was 1.5s — too aggressive, caused stutter)
-                     liveBufferLatencyMinRemain: 1.0,  // keep 1s buffer (was 0.2s — too thin, caused stutter)
-                     liveSync: true,
-                     fixAudioTimestampGap: true,
-                     continuousFetch: true             // keep fetching even when buffer full
                   });
                   window._mpegtsPlayer.on(mpegts.Events.ERROR, function(errType, errDetail) {
                      console.log('[mpegts.js] error:', errType, errDetail);
@@ -6829,18 +6820,6 @@
                               try {
                                  window._mpegtsPlayer = mpegts.createPlayer({
                                     type: 'mpegts', isLive: true, url: _effectiveUrl
-                                 }, {
-                                    enableStashBuffer: true,
-                                    stashInitialSize: 1024,
-                                    autoCleanupSourceBuffer: true,
-                                    autoCleanupMaxBackwardDuration: 10,
-                                    autoCleanupMinBackwardDuration: 5,
-                                    liveBufferLatencyChasing: true,
-                                    liveBufferLatencyMaxLatency: 5,
-                                    liveBufferLatencyMinRemain: 1.0,
-                                    liveSync: true,
-                                    fixAudioTimestampGap: true,
-                                    continuousFetch: true
                                  });
                                  window._mpegtsPlayer.on(mpegts.Events.ERROR, function(e2, d2) {
                                     console.log('[mpegts.js] retry error:', e2, d2);
