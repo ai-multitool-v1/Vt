@@ -6841,9 +6841,9 @@
                                     playerLoader.classList.add("loader-offline");
                                     playerStatusText.innerText = "Stream Offline";
                                  });
-                                 window._mpegtsPlayer.attachMedia(videoPlayer);
+                                 window._mpegtsPlayer.attachMediaElement(videoPlayer);
                                  window._mpegtsPlayer.load();
-                                 videoPlayer.play().catch(function() {});
+                                 window._mpegtsPlayer.play();
                               } catch (eRetry) {
                                  console.log('[mpegts.js] retry failed:', eRetry);
                                  playerLoader.classList.remove("hidden");
@@ -6879,7 +6879,7 @@
                   window._mpegtsPlayer.on(mpegts.Events.LOADING_COMPLETE, function() {
                      console.log('[mpegts.js] loading complete');
                   });
-                  window._mpegtsPlayer.attachMedia(videoPlayer);
+                  window._mpegtsPlayer.attachMediaElement(videoPlayer);
                   videoPlayer.addEventListener("loadedmetadata", function() {
                      if (window._streamLoadTimeout) {
                         clearTimeout(window._streamLoadTimeout);
@@ -6897,9 +6897,7 @@
                      tryIframeFallback(ch.url);
                   }, { once: true });
                   window._mpegtsPlayer.load();
-                  videoPlayer.play().catch(function(e) {
-                     console.log("[mpegts.js] auto-play blocked", e);
-                  });
+                  window._mpegtsPlayer.play();
                   var _mtsPlayTimeout = setTimeout(function() {
                      if (!playerLoader.classList.contains('hidden')) {
                         try { window._mpegtsPlayer.destroy(); } catch (eMts3) {}
