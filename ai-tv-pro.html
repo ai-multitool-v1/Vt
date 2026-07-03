@@ -654,6 +654,34 @@
          color: #facc15;
          flex-shrink: 0;
       }
+      /* Duration bar for non-live video files */
+      .duration-slider {
+         -webkit-appearance: none;
+         appearance: none;
+         background: rgba(255,255,255,0.15);
+         border-radius: 4px;
+         outline: none;
+         height: 4px;
+      }
+      .duration-slider::-webkit-slider-thumb {
+         -webkit-appearance: none;
+         appearance: none;
+         width: 12px;
+         height: 12px;
+         border-radius: 50%;
+         background: #00f3ff;
+         cursor: pointer;
+         box-shadow: 0 0 6px rgba(0,243,255,0.5);
+      }
+      .duration-slider::-moz-range-thumb {
+         width: 12px;
+         height: 12px;
+         border-radius: 50%;
+         background: #00f3ff;
+         cursor: pointer;
+         border: none;
+         box-shadow: 0 0 6px rgba(0,243,255,0.5);
+      }
       #proxyToggleBtn .proxy-toggle-state {
          display: inline-flex;
          align-items: center;
@@ -3385,6 +3413,14 @@
                <div class="resize-handle" id="resizeHandle"></div>
                <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 invisible transition-all duration-300 flex flex-col justify-end p-3 z-20 pointer-events-none" id="controlsOverlay">
                   <div class="pointer-events-auto w-full relative flex flex-col justify-end"><button class="hidden absolute top-0 right-0 m-2 bg-red-600 hover:bg-red-700 text-white w-8 h-8 rounded-full items-center justify-center text-sm shadow-xl z-[60] cursor-pointer pointer-events-auto transform transition hover:scale-110 active:scale-95 border border-white/20" id="closeFloatBtn"><i class="fas fa-times"></i></button>
+                     <!-- Duration bar for non-live video files (.mp4, .mkv, etc.) -->
+                     <div id="durationBarContainer" class="pointer-events-auto px-2 mb-1 hidden">
+                        <div class="flex items-center gap-2">
+                           <span class="text-[10px] text-gray-300 font-mono tabular-nums" id="durationCurrent">0:00</span>
+                           <input type="range" id="durationSlider" min="0" max="100" value="0" step="0.1" class="flex-1 h-1.5 accent-cyan-400 cursor-pointer duration-slider" />
+                           <span class="text-[10px] text-gray-300 font-mono tabular-nums" id="durationTotal">0:00</span>
+                        </div>
+                     </div>
                      <div class="flex justify-between items-center bg-black/60 backdrop-blur-md p-2 rounded-xl border border-white/10 shadow-lg mt-auto">
                         <div class="flex items-center gap-3 overflow-hidden"><button class="text-white hover:text-cyan-400 w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition" id="playBtn"><i class="fas fa-play"></i></button>
                            <div class="flex flex-col"><span class="text-xs font-bold text-white truncate max-w-[120px] md:max-w-[200px]" id="playingTitle">Loading...</span><span class="text-[9px] text-gray-400 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> LIVE</span></div>
@@ -6440,7 +6476,7 @@
                       urlLower.includes('format=mpd') ||
                       urlLower.includes('/dash/') ||
                       (ch.stream_type === 'dash');
-         var isMP4 = urlLower.match(/\.(mp4|mkv|webm|avi|mov|flv|wmv)(\?|$)/i);
+         var isMP4 = urlLower.match(/\.(mp4|mkv|webm|avi|mov|flv|wmv|m4v|mpeg4|mpg|mpeg|ogv|3gp)(\?|$)/i);
          var isHLS = urlLower.includes('.m3u8') || urlLower.includes('.m3u') || urlLower.includes('m3u8');
          var isTS = urlLower.match(/\.ts(\?|$)/i);
          // If channel declares stream_type explicitly, honor it for .ts live detection.
@@ -6462,9 +6498,24 @@
             console.log('[Proxy] Routing stream through Cloudflare Worker:', ch.url, '→', _effectiveUrl.substring(0, 100) + '...');
          }
          (function checkStreamHTTP() {
+            // IMPORTANT: This pre-check is intentionally DISABLED for stream types
+            // that use a dedicated player engine (mpegts.js for .ts, Shaka for
+            // HLS/DASH). Many .ts and .m3u8 origin servers reject HEAD requests
+            // with 403/404 even though GET works fine. The HEAD pre-check was
+            // prematurely destroying the player before mpegts.js/Shaka could
+            // connect, causing .ts streams to always show "Offline".
+            //
+            // We only run the HEAD pre-check for non-stream URLs (iframe, upload,
+            // http-direct that aren't .ts/.m3u8/.mpd).
             try {
                var checkUrl = _effectiveUrl || ch.url;
                if (checkUrl.startsWith('blob:') || checkUrl.startsWith('data:')) return;
+               // Skip pre-check entirely for stream types that have their own
+               // player engines with proper error handling + timeout fallback.
+               if (isTS || isHLS || isDash) {
+                  console.log('[PreCheck] Skipping HEAD pre-check for stream type (TS=' + isTS + ', HLS=' + isHLS + ', DASH=' + isDash + ') — letting player engine handle it');
+                  return;
+               }
                fetch(checkUrl, {
                      method: 'HEAD',
                      mode: 'cors',
@@ -6474,8 +6525,6 @@
                      var status = resp.status;
                      var ct = (resp.headers && resp.headers.get('content-type')) || '';
                      // Detect Cloudflare Worker JSON error responses.
-                     // The worker returns {"ok":false,"message":"..."} with content-type application/json
-                     // when upstream is blocked. Show "Stream Offline" instead of passing JSON to player.
                      if (ct.indexOf('application/json') !== -1 || status === 502 || status === 520) {
                         console.log('[Proxy] Pre-check detected proxy error response (status=' + status + ', ct=' + ct + ')');
                         if (window._streamLoadTimeout) {
@@ -6516,6 +6565,8 @@
             try { window._mpegtsPlayer.destroy(); } catch (eMtsCleanup) {}
             window._mpegtsPlayer = null;
          }
+         // Reset the mpegts retry flag for this new channel
+         window._mpegtsRetried = false;
          if (window._mpegtsPlayTimeout) {
             clearTimeout(window._mpegtsPlayTimeout);
             window._mpegtsPlayTimeout = null;
@@ -6761,12 +6812,61 @@
                   });
                   window._mpegtsPlayer.on(mpegts.Events.ERROR, function(errType, errDetail) {
                      console.log('[mpegts.js] error:', errType, errDetail);
-                     if (errType === mpegts.ErrorTypes.NETWORK_ERROR ||
-                         errType === mpegts.ErrorTypes.MEDIA_ERROR) {
+                     if (errType === mpegts.ErrorTypes.NETWORK_ERROR) {
+                        // Network error: retry once before giving up. Many .ts
+                        // servers have intermittent connection resets.
+                        if (!window._mpegtsRetried) {
+                           window._mpegtsRetried = true;
+                           console.log('[mpegts.js] Network error — retrying once...');
+                           try { window._mpegtsPlayer.destroy(); } catch (eR) {}
+                           window._mpegtsPlayer = null;
+                           setTimeout(function() {
+                              try {
+                                 window._mpegtsPlayer = mpegts.createPlayer({
+                                    type: 'mpegts', isLive: true, url: _effectiveUrl
+                                 }, {
+                                    enableStashBuffer: false,
+                                    stashInitialSize: 128,
+                                    liveBufferLatencyChasing: true,
+                                    liveBufferLatencyMaxLatency: 1.5,
+                                    liveBufferLatencyMinRemain: 0.2,
+                                    liveSync: true
+                                 });
+                                 window._mpegtsPlayer.on(mpegts.Events.ERROR, function(e2, d2) {
+                                    console.log('[mpegts.js] retry error:', e2, d2);
+                                    try { window._mpegtsPlayer.destroy(); } catch (eMts2) {}
+                                    window._mpegtsPlayer = null;
+                                    if (window._streamLoadTimeout) { clearTimeout(window._streamLoadTimeout); window._streamLoadTimeout = null; }
+                                    playerLoader.classList.remove("hidden");
+                                    playerLoader.classList.add("loader-offline");
+                                    playerStatusText.innerText = "Stream Offline";
+                                 });
+                                 window._mpegtsPlayer.attachMedia(videoPlayer);
+                                 window._mpegtsPlayer.load();
+                                 videoPlayer.play().catch(function() {});
+                              } catch (eRetry) {
+                                 console.log('[mpegts.js] retry failed:', eRetry);
+                                 playerLoader.classList.remove("hidden");
+                                 playerLoader.classList.add("loader-offline");
+                                 playerStatusText.innerText = "Stream Offline";
+                              }
+                           }, 500);
+                           return;
+                        }
+                        // Already retried — show offline
                         try { window._mpegtsPlayer.destroy(); } catch (eMts2) {}
                         window._mpegtsPlayer = null;
-                        // Show "Stream Offline" instead of iframe fallback (which
-                        // would render JSON error as HTML or trigger browser download).
+                        if (window._streamLoadTimeout) {
+                           clearTimeout(window._streamLoadTimeout);
+                           window._streamLoadTimeout = null;
+                        }
+                        playerLoader.classList.remove("hidden");
+                        playerLoader.classList.add("loader-offline");
+                        playerStatusText.innerText = "Stream Offline";
+                     } else if (errType === mpegts.ErrorTypes.MEDIA_ERROR) {
+                        // Media error: try to recover by destroying + recreating
+                        try { window._mpegtsPlayer.destroy(); } catch (eMts2) {}
+                        window._mpegtsPlayer = null;
                         if (window._streamLoadTimeout) {
                            clearTimeout(window._streamLoadTimeout);
                            window._streamLoadTimeout = null;
@@ -7104,6 +7204,80 @@
          }
          const playingCard2 = document.querySelector('.card-animate[data-ch-index="' + currentChannelIndex + '"]');
          if (playingCard2) playingCard2.classList.add('is-playing');
+         // Duration bar: show for non-live video files (.mp4, .mkv, .mpeg4, etc.),
+         // hide for live streams (.ts, .m3u8, .mpd).
+         _setupDurationBar(isMP4);
+      }
+      // Duration bar logic for non-live video files
+      function _setupDurationBar(isNonLiveVideo) {
+         var container = document.getElementById('durationBarContainer');
+         var slider = document.getElementById('durationSlider');
+         var currentLabel = document.getElementById('durationCurrent');
+         var totalLabel = document.getElementById('durationTotal');
+         var liveBadge = document.querySelector('#controlsOverlay .text-\\[9px\\]');
+         if (!container || !slider) return;
+         if (isNonLiveVideo) {
+            container.classList.remove('hidden');
+            // Change LIVE badge to VOD
+            if (liveBadge) {
+               liveBadge.innerHTML = '<i class="fas fa-film" style="margin-right:4px;font-size:8px;"></i> VOD';
+               liveBadge.style.color = '#00f3ff';
+            }
+            // Update duration bar on loadedmetadata
+            videoPlayer.addEventListener('loadedmetadata', function() {
+               var dur = videoPlayer.duration;
+               if (isFinite(dur) && dur > 0) {
+                  slider.max = dur;
+                  totalLabel.textContent = _formatTime(dur);
+               }
+            }, { once: true });
+            // Update current position on timeupdate
+            var _durTimeUpdateHandler = function() {
+               if (!isNaN(videoPlayer.duration) && isFinite(videoPlayer.duration)) {
+                  slider.value = videoPlayer.currentTime;
+                  currentLabel.textContent = _formatTime(videoPlayer.currentTime);
+               }
+            };
+            videoPlayer.addEventListener('timeupdate', _durTimeUpdateHandler);
+            // Seek on slider input
+            var _durSeekHandler = function() {
+               var val = parseFloat(slider.value);
+               if (isFinite(val) && val >= 0) {
+                  videoPlayer.currentTime = val;
+                  currentLabel.textContent = _formatTime(val);
+               }
+            };
+            slider.addEventListener('input', _durSeekHandler);
+            // Store handlers for cleanup
+            window._durTimeUpdateHandler = _durTimeUpdateHandler;
+            window._durSeekHandler = _durSeekHandler;
+         } else {
+            container.classList.add('hidden');
+            // Restore LIVE badge
+            if (liveBadge) {
+               liveBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> LIVE';
+               liveBadge.style.color = '';
+            }
+            // Clean up handlers
+            if (window._durTimeUpdateHandler) {
+               videoPlayer.removeEventListener('timeupdate', window._durTimeUpdateHandler);
+               window._durTimeUpdateHandler = null;
+            }
+            if (window._durSeekHandler && slider) {
+               slider.removeEventListener('input', window._durSeekHandler);
+               window._durSeekHandler = null;
+            }
+         }
+      }
+      function _formatTime(seconds) {
+         if (!isFinite(seconds) || seconds < 0) return '0:00';
+         var h = Math.floor(seconds / 3600);
+         var m = Math.floor((seconds % 3600) / 60);
+         var s = Math.floor(seconds % 60);
+         if (h > 0) {
+            return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+         }
+         return m + ':' + String(s).padStart(2, '0');
       }
       (function() {
          if (window._autoRecoverInterval) {
