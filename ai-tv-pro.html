@@ -638,8 +638,8 @@
       }
       @media (max-width: 640px) {
          .header-logo {
-            height: 36px;
-            max-width: 130px;
+            height: 80px;
+            max-width: 88px;
          }
       }
       /* Header right group: prevent overflow on mobile */
@@ -2655,8 +2655,11 @@
    /* FIFA Live tab trophy icon — uses fill instead of stroke, so it needs
       explicit sizing to render visibly at the same scale as other icons */
    .tab svg[viewBox="0 0 600.000000 530.000000"] {
-       width: 28px;
-       height: 28px;
+       width: 22px;
+       height: 22px;
+       transform: scale(2.00);
+    transform-origin:center;
+    overflow:visible;
        fill: currentColor;
        color: #facc15; /* gold */
    }
