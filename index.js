@@ -363,8 +363,49 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
   const cachedRef = _hostUaCache.get(targetUrl.hostname + ":ref");
   if (cachedRef && !refList.includes(cachedRef)) refList.push(cachedRef);
 
+  // Diagnostic logging helper — redacts sensitive values.
+  function diagLog(stage, resp, attemptNum, hopNum, url, ua, hasRef, hasOrigin, hasRange, elapsed) {
+    const ct = (resp && resp.headers && resp.headers.get("content-type")) || "";
+    const location = (resp && resp.headers && resp.headers.get("location")) || "";
+    let nextHost = "";
+    if (location) {
+      try { nextHost = new URL(location, url).hostname; } catch (e) { nextHost = "(unparseable)"; }
+    }
+    // Redact pathname: keep only first path segment + extension
+    let redactedPath = "";
+    try {
+      const u = new URL(url);
+      const segs = u.pathname.split("/").filter(Boolean);
+      if (segs.length > 0) {
+        redactedPath = "/" + segs[0] + "/..." + (segs.length > 1 ? "/" + segs[segs.length - 1].substring(0, 8) + "..." : "");
+      } else {
+        redactedPath = "/";
+      }
+    } catch (e) { redactedPath = "(unparseable)"; }
+
+    console.log(JSON.stringify({
+      diag: true,
+      stage: stage,
+      attempt: attemptNum,
+      hop: hopNum,
+      host: new URL(url).hostname,
+      path: redactedPath,
+      method: request.method,
+      ua: ua ? ua.substring(0, 40) : "(none)",
+      hasReferer: !!hasRef,
+      hasOrigin: !!hasOrigin,
+      hasRange: !!hasRange,
+      status: resp ? resp.status : null,
+      contentType: ct.substring(0, 40),
+      hasLocation: !!location,
+      nextHost: nextHost || null,
+      elapsedMs: elapsed,
+    }));
+  }
+
   while (true) {
     if (totalSubrequests >= MAX_SUBREQUESTS) {
+      console.log(JSON.stringify({ diag: true, stage: "subrequest_limit_reached", attempts: totalSubrequests }));
       return {
         resp: jsonResponse(
           { ok: false, message: "Subrequest limit reached." },
@@ -380,8 +421,12 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
 
     const currentUa = uaList[uaRetryIdx] || uaList[0];
     const currentRef = refRetryIdx >= 0 ? (refList[refRetryIdx] || null) : (refList[0] || null);
+    const hasRange = request.headers.has("range");
+    const hasOrigin = !!(extraParams.origin);
 
     const upstreamHeaders = buildUpstreamHeaders(request, extraParams, currentUa, currentRef, targetUrl.hostname);
+
+    const fetchStart = Date.now();
 
     let resp;
     try {
@@ -392,18 +437,45 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
         cf: { cacheEverything: false, scrapeShield: false },
         signal: controller.signal,
       });
-    } finally {
+    } catch (fetchErr) {
+      const elapsed = Date.now() - fetchStart;
+      console.log(JSON.stringify({
+        diag: true,
+        stage: "fetch_error",
+        attempt: totalSubrequests,
+        hop: redirects,
+        host: currentUrl.hostname,
+        error: fetchErr.name || "Unknown",
+        message: fetchErr.message ? fetchErr.message.substring(0, 100) : null,
+        elapsedMs: elapsed,
+      }));
       clearTimeout(timeout);
+      throw fetchErr;
     }
+    clearTimeout(timeout);
+
+    const elapsed = Date.now() - fetchStart;
+
+    // Log every attempt with full diagnostic context.
+    diagLog("upstream_response", resp, totalSubrequests, redirects, currentUrl.toString(), currentUa, currentRef, hasOrigin, hasRange, elapsed);
 
     if ([301, 302, 303, 307, 308].includes(resp.status)) {
       const location = resp.headers.get("location");
       if (!location || redirects >= MAX_REDIRECTS) {
+        console.log(JSON.stringify({ diag: true, stage: "redirect_exhausted", hops: redirects, hasLocation: !!location }));
         return { resp, effectiveUrl: currentUrl };
       }
       const nextUrl = new URL(location, currentUrl);
+      console.log(JSON.stringify({
+        diag: true,
+        stage: "redirect_following",
+        fromHost: currentUrl.hostname,
+        toHost: nextUrl.hostname,
+        hop: redirects + 1,
+      }));
       // Security: validate redirect target (SSRF protection)
       if (env.ALLOWED_HOSTS && !isHostAllowed(nextUrl.hostname, env.ALLOWED_HOSTS)) {
+        console.log(JSON.stringify({ diag: true, stage: "redirect_blocked_by_allowlist", host: nextUrl.hostname }));
         return {
           resp: jsonResponse(
             { ok: false, message: `Redirect target host not in allowlist` },
@@ -415,11 +487,20 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
       currentUrl = nextUrl;
       redirects += 1;
       uaRetryIdx = 0;
+      try { await resp.arrayBuffer(); } catch (e) {}
       continue;
     }
 
     // VLC-like retry on 401/403/429. Capped to fit subrequest budget.
     if ((resp.status === 401 || resp.status === 403 || resp.status === 429) && uaRetryIdx < uaList.length - 1) {
+      console.log(JSON.stringify({
+        diag: true,
+        stage: "retry_ua",
+        status: resp.status,
+        attempt: totalSubrequests,
+        oldUa: currentUa ? currentUa.substring(0, 40) : null,
+        newUa: (uaList[uaRetryIdx + 1] || "").substring(0, 40),
+      }));
       uaRetryIdx += 1;
       try { await resp.arrayBuffer(); } catch (e) {}
       continue;
@@ -429,20 +510,55 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
         if (refList.length >= MAX_REF_RETRIES) break;
         if (!refList.includes(r)) refList.push(r);
       }
+      console.log(JSON.stringify({
+        diag: true,
+        stage: "retry_referer",
+        status: resp.status,
+        attempt: totalSubrequests,
+        fallbackRef: refList[refList.length - 1] ? refList[refList.length - 1].substring(0, 50) : null,
+      }));
       refRetryIdx = 0;
       try { await resp.arrayBuffer(); } catch (e) {}
       continue;
     }
     if ((resp.status === 401 || resp.status === 403) && refRetryIdx < refList.length - 1) {
+      console.log(JSON.stringify({
+        diag: true,
+        stage: "retry_referer_next",
+        status: resp.status,
+        attempt: totalSubrequests,
+      }));
       refRetryIdx += 1;
       try { await resp.arrayBuffer(); } catch (e) {}
       continue;
     }
 
-    // Success! Cache the winning UA + Referer for this host.
+    // Log final outcome
     if (resp.ok || resp.status === 206 || resp.status === 304) {
+      console.log(JSON.stringify({
+        diag: true,
+        stage: "success",
+        status: resp.status,
+        attempt: totalSubrequests,
+        hops: redirects,
+        host: currentUrl.hostname,
+        winningUa: currentUa ? currentUa.substring(0, 40) : null,
+        hasReferer: !!currentRef,
+      }));
+      // Cache the winning UA + Referer for this host.
       _hostUaCache.set(targetUrl.hostname, currentUa);
       if (currentRef) _hostUaCache.set(targetUrl.hostname + ":ref", currentRef);
+    } else {
+      console.log(JSON.stringify({
+        diag: true,
+        stage: "final_error",
+        status: resp.status,
+        attempt: totalSubrequests,
+        hops: redirects,
+        host: currentUrl.hostname,
+        allUasTried: uaList.map(u => u.substring(0, 30)),
+        allRefsTried: refList.length,
+      }));
     }
 
     return { resp, effectiveUrl: currentUrl };
