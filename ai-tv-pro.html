@@ -6478,12 +6478,25 @@
                       (ch.stream_type === 'dash');
          var isMP4 = urlLower.match(/\.(mp4|mkv|webm|avi|mov|flv|wmv|m4v|mpeg4|mpg|mpeg|ogv|3gp)(\?|$)/i);
          var isHLS = urlLower.includes('.m3u8') || urlLower.includes('.m3u') || urlLower.includes('m3u8');
+         // TS detection: .ts extension, stream_type=ts, extension=ts query param,
+         // or /live/play/ and /live/stream URL patterns (IPTV portal redirect endpoints).
          var isTS = urlLower.match(/\.ts(\?|$)/i);
-         // If channel declares stream_type explicitly, honor it for .ts live detection.
          if (ch.stream_type === 'ts' || ch.stream_type === 'mpegts') isTS = true;
+         if (urlLower.includes('extension=ts')) isTS = true;
+         if (urlLower.includes('/live/play/') || urlLower.includes('/live/stream')) isTS = true;
+         // PHP/API playback endpoints that commonly serve TS after redirect.
+         // e.g. /play/live.php?...&extension=ts
+         if (urlLower.includes('live.php') && urlLower.includes('extension=ts')) isTS = true;
          var isHTTPDirect = !isDash && !isMP4 && !isHLS && !isTS && /^https?:\/\/[^\s]+$/i.test(ch.url);
          if (!isDash && !isMP4 && !isHLS && !isTS && !isHTTPDirect) {
-            isHLS = true;
+            // For extension-less URLs that don't match any pattern, default to TS
+            // (most IPTV portals serve raw MPEG-TS at extension-less endpoints).
+            // This prevents misrouting to Shaka/HLS which would fail.
+            if (urlLower.includes('/live/') || urlLower.includes('/play/') || urlLower.includes('/stream/')) {
+               isTS = true;
+            } else {
+               isHLS = true;
+            }
          }
          // HTTP-protocol stream → route through Cloudflare Worker proxy so browsers
          // don't block it as mixed-content. Also proxy when channel requires a
@@ -6602,7 +6615,7 @@
                   window._shakaPlayer = null;
                }
             }
-         }, 20000);
+         }, isTS ? 30000 : 20000);
          function tryIframeFallback(url) {
             console.log("[Iframe Fallback] Attempting:", url);
             var ifr = document.getElementById("iframePlayer");
@@ -6839,7 +6852,14 @@
                      });
                   }, { once: true });
                   videoPlayer.addEventListener("error", function() {
-                     tryIframeFallback(_effectiveUrl);
+                     // Don't call tryIframeFallback for TS streams — just show offline.
+                     if (window._streamLoadTimeout) {
+                        clearTimeout(window._streamLoadTimeout);
+                        window._streamLoadTimeout = null;
+                     }
+                     playerLoader.classList.remove("hidden");
+                     playerLoader.classList.add("loader-offline");
+                     playerStatusText.innerText = "Stream Offline";
                   }, { once: true });
                }
             } else {

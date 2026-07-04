@@ -39,44 +39,21 @@ const DEFAULT_RATE_LIMIT_WINDOW_SEC = 60;
 
 // VLC-like User-Agent pool. When upstream returns 403/401, we retry with the
 // next UA in this list. The first UA that works is cached for that host.
+// Minimal UA pool. The first entry is the confirmed working UA for IPTV portals.
+// On 403/401, we try the next one. Kept small to minimize subrequests + latency.
 const USER_AGENT_POOL = [
+  "VLC/3.0.21 LibVLC/3.0.21",
   "VLC/3.0.18 LibVLC/3.0.18",
-  "VLC/3.0.17 LibVLC/3.0.17",
-  "VLC/3.0.16 LibVLC/3.0.16",
   "Lavf/58.76.100",
-  "Lavf/58.45.100",
-  "Lavf/57.83.103",
-  "mpv 0.33.1",
-  "mpv 0.32.0",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
-  "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-  "AppleCoreMedia/1.0.0.20A362 (iPhone; U; CPU OS 16_0 like Mac OS X; en_us)",
-  "ExoPlayer",
-  "TVirl/7.6.2 (Linux;Android 11) ExoPlayerLib/2.18.5",
-  " Kodi/20.0 (Linux; Android 11) Krypton",
 ];
 
 // Per-host UA cache (so we don't have to try every UA on every request).
 const _hostUaCache = new Map();
 
-// Realistic client IPs for X-Forwarded-For spoofing. Many IPTV portals check
-// this header to "trust" the request. We rotate through residential-looking IPs.
-const CLIENT_IP_POOL = [
-  "192.168.1." + (Math.floor(Math.random() * 254) + 1),
-  "10.0.0." + (Math.floor(Math.random() * 254) + 1),
-  "172.16.0." + (Math.floor(Math.random() * 254) + 1),
-  "100.64.0." + (Math.floor(Math.random() * 254) + 1),
-];
-
-// Realistic Origin/Referer pairs to try when channel doesn't supply one.
+// Referer fallbacks — only used if the first request gets 403 and no channel
+// Referer was supplied. Kept minimal to avoid excessive subrequests.
 const REFERER_FALLBACKS = (host) => [
   "http://" + host + "/",
-  "https://" + host + "/",
-  "http://" + host + "/c/c/",
-  "http://" + host + "/portal.php",
-  "https://" + host + "/stalker_portal/",
 ];
 
 const CORS_HEADERS = {
@@ -90,17 +67,13 @@ const CORS_HEADERS = {
 };
 
 // Headers we forward FROM the client TO the upstream origin.
+// Kept minimal — only Range and conditional-request headers that are
+// safe and necessary for media streaming.
 const REQUEST_HEADERS_TO_FORWARD = [
-  "authorization",
-  "cookie",
-  "accept",
-  "accept-language",
+  "range",
   "if-none-match",
   "if-modified-since",
-  "range",
 ];
-// NOTE: accept-encoding is deliberately NOT forwarded from the client;
-// see compression notes near fetchUpstream().
 
 // Headers we copy FROM the upstream response back TO the client.
 const RESPONSE_HEADERS_TO_PRESERVE = [
@@ -223,7 +196,11 @@ export default {
       }
 
       // ---- Fetch upstream (with timeout + manual redirect handling) ----
-      const upstreamResp = await fetchUpstream(request, targetUrl, extraParams, env);
+      // fetchUpstream follows redirects internally and returns the final response.
+      // We capture the final effective URL for classification.
+      const fetchResult = await fetchUpstream(request, targetUrl, extraParams, env);
+      const upstreamResp = fetchResult.resp;
+      const effectiveUrl = fetchResult.effectiveUrl; // final URL after redirects
       logCtx.status = upstreamResp.status;
 
       if (!upstreamResp.ok && upstreamResp.status !== 206 && upstreamResp.status !== 304) {
@@ -234,26 +211,39 @@ export default {
         );
       }
 
-      const pathLower = targetUrl.pathname.toLowerCase();
+      // Classify using the FINAL effective URL (after redirects) + Content-Type.
+      // This correctly handles PHP/API endpoints that redirect to /live/play/<token>/<id>
+      const finalPathLower = effectiveUrl.pathname.toLowerCase();
+      const finalUrlLower = effectiveUrl.toString().toLowerCase();
       const contentType = (upstreamResp.headers.get("content-type") || "").toLowerCase();
       const isManifest =
-        TEXT_MANIFEST_EXT.some((ext) => pathLower.endsWith(ext)) ||
+        TEXT_MANIFEST_EXT.some((ext) => finalPathLower.endsWith(ext)) ||
+        TEXT_MANIFEST_EXT.some((ext) => finalPathLower.includes(ext)) ||
         contentType.includes("mpegurl") ||
         contentType.includes("dash+xml");
+
+      // Detect live MPEG-TS by Content-Type or URL patterns.
+      const isLiveTS =
+        contentType.includes("video/mp2t") ||
+        finalPathLower.endsWith(".ts") ||
+        (targetUrl.search || "").includes("extension=ts") ||
+        finalUrlLower.includes("/live/play/") ||
+        finalUrlLower.includes("/live/stream");
 
       let response;
 
       if (request.method === "HEAD") {
         // No body needed; just relay headers.
-        const headers = passthroughHeaders(upstreamResp.headers, pathLower);
+        const headers = passthroughHeaders(upstreamResp.headers, finalPathLower);
         response = new Response(null, { status: upstreamResp.status, headers });
       } else if (isManifest) {
         const bodyText = await upstreamResp.text();
         const proxyBase = `${reqUrl.origin}${reqUrl.pathname}`;
-        const isMpd = pathLower.endsWith(".mpd") || contentType.includes("dash+xml");
+        const isMpd = finalPathLower.endsWith(".mpd") || contentType.includes("dash+xml");
+        // Use effectiveUrl (final URL) as base for relative URL resolution.
         const rewritten = isMpd
-          ? rewriteMPD(bodyText, targetUrl, proxyBase, extraParams)
-          : rewriteM3U8(bodyText, targetUrl, proxyBase, extraParams);
+          ? rewriteMPD(bodyText, effectiveUrl, proxyBase, extraParams)
+          : rewriteM3U8(bodyText, effectiveUrl, proxyBase, extraParams);
 
         const liveness = isMpd ? mpdLiveness(bodyText) : hlsLiveness(bodyText);
         const cacheControl =
@@ -266,24 +256,32 @@ export default {
             "Cache-Control": cacheControl,
           },
         });
+      } else if (isLiveTS) {
+        // Live MPEG-TS: stream body directly, NO caching, NO buffering.
+        const headers = passthroughHeaders(upstreamResp.headers, finalPathLower);
+        // Force correct content-type if origin sent something generic.
+        if (!headers.get("content-type") || headers.get("content-type").includes("octet-stream") || headers.get("content-type") === "text/html") {
+          headers.set("Content-Type", MIME_MAP[".ts"]);
+        }
+        headers.set("Cache-Control", "no-store");
+        response = new Response(upstreamResp.body, {
+          status: upstreamResp.status,
+          headers,
+        });
       } else {
         // Binary passthrough: stream body directly, no buffering.
-        const headers = passthroughHeaders(upstreamResp.headers, pathLower);
-        // VLC-like content-type detection by URL query string for stream URLs
-        // that don't have a file extension (e.g. /play/live.php?...&extension=ts).
+        const headers = passthroughHeaders(upstreamResp.headers, finalPathLower);
+        // Content-type detection for extension-less URLs.
         if (!headers.get("content-type") || headers.get("content-type").includes("octet-stream") || headers.get("content-type") === "text/html") {
           const extParamMatch = (targetUrl.search || "").match(/extension=([a-z0-9]+)/i);
-          const urlLow = targetUrl.toString().toLowerCase();
           if (extParamMatch) {
             const ext = "." + extParamMatch[1].toLowerCase();
             if (MIME_MAP[ext]) headers.set("Content-Type", MIME_MAP[ext]);
-          } else if (urlLow.includes('/live/play/') || urlLow.includes('/live/stream')) {
-            // Many IPTV portals serve raw MPEG-TS at /live/play/<token>/<id>
-            headers.set("Content-Type", MIME_MAP[".ts"]);
           }
         }
+        // Non-TS binary: bounded cache for VOD segments, no-store for live.
         if (!headers.has("Cache-Control")) {
-          headers.set("Cache-Control", "public, max-age=86400, immutable");
+          headers.set("Cache-Control", "public, max-age=3600");
         }
         response = new Response(upstreamResp.body, {
           status: upstreamResp.status,
@@ -293,7 +291,11 @@ export default {
 
       response = withCors(response);
 
-      if (!isRangeReq && request.method === "GET" && upstreamResp.status === 200) {
+      // Cache ONLY non-streaming, non-range, 200 responses (VOD segments, manifests).
+      // NEVER cache live TS (endless stream — would buffer forever in cache.put).
+      // NEVER cache 206 partial content.
+      // NEVER cache if the response is a live stream.
+      if (!isRangeReq && request.method === "GET" && upstreamResp.status === 200 && !isLiveTS) {
         ctx.waitUntil(cache.put(cacheKey, response.clone()));
       }
 
@@ -344,7 +346,6 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
   let totalSubrequests = 0;
 
   // Build the initial UA list: explicit channel UA first, then the pool.
-  // Capped at MAX_UA_RETRIES to keep subrequest count under Cloudflare's limit.
   const uaList = [];
   if (extraParams.ua) uaList.push(decodeURIComponent(extraParams.ua));
   const cachedUa = _hostUaCache.get(targetUrl.hostname);
@@ -353,22 +354,24 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
     if (uaList.length >= MAX_UA_RETRIES) break;
     if (!uaList.includes(ua)) uaList.push(ua);
   }
+  // Ensure VLC/3.0.21 is always in the list as a fallback.
+  if (!uaList.includes("VLC/3.0.21 LibVLC/3.0.21")) uaList.push("VLC/3.0.21 LibVLC/3.0.21");
 
   // Build the Referer list: explicit channel ref first, then fallbacks.
-  // Capped at MAX_REF_RETRIES.
   const refList = [];
   if (extraParams.ref) refList.push(decodeURIComponent(extraParams.ref));
   const cachedRef = _hostUaCache.get(targetUrl.hostname + ":ref");
   if (cachedRef && !refList.includes(cachedRef)) refList.push(cachedRef);
-  // We'll lazily add fallback referers only if we hit a 403.
 
   while (true) {
-    // Hard cap on total subrequests to avoid Cloudflare's "Too many subrequests" error.
     if (totalSubrequests >= MAX_SUBREQUESTS) {
-      return jsonResponse(
-        { ok: false, message: "Subrequest limit reached. Stream may be blocked or require VLC." },
-        502
-      );
+      return {
+        resp: jsonResponse(
+          { ok: false, message: "Subrequest limit reached." },
+          502
+        ),
+        effectiveUrl: currentUrl,
+      };
     }
     totalSubrequests += 1;
 
@@ -396,18 +399,21 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
     if ([301, 302, 303, 307, 308].includes(resp.status)) {
       const location = resp.headers.get("location");
       if (!location || redirects >= MAX_REDIRECTS) {
-        return resp; // give up, return the redirect response as-is
+        return { resp, effectiveUrl: currentUrl };
       }
       const nextUrl = new URL(location, currentUrl);
+      // Security: validate redirect target (SSRF protection)
       if (env.ALLOWED_HOSTS && !isHostAllowed(nextUrl.hostname, env.ALLOWED_HOSTS)) {
-        return jsonResponse(
-          { ok: false, message: `Redirect target host '${nextUrl.hostname}' not in allowlist` },
-          403
-        );
+        return {
+          resp: jsonResponse(
+            { ok: false, message: `Redirect target host not in allowlist` },
+            403
+          ),
+          effectiveUrl: nextUrl,
+        };
       }
       currentUrl = nextUrl;
       redirects += 1;
-      // Reset UA retry counter on redirect — the new host may accept the channel UA.
       uaRetryIdx = 0;
       continue;
     }
@@ -418,9 +424,7 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
       try { await resp.arrayBuffer(); } catch (e) {}
       continue;
     }
-    // Only try referer fallbacks if UA retries exhausted AND we haven't tried referer fallbacks yet.
     if ((resp.status === 401 || resp.status === 403) && refRetryIdx === -1) {
-      // Add at most MAX_REF_RETRIES fallback referers.
       for (const r of REFERER_FALLBACKS(targetUrl.hostname)) {
         if (refList.length >= MAX_REF_RETRIES) break;
         if (!refList.includes(r)) refList.push(r);
@@ -431,8 +435,6 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
     }
     if ((resp.status === 401 || resp.status === 403) && refRetryIdx < refList.length - 1) {
       refRetryIdx += 1;
-      // Don't reset uaRetryIdx — keep subrequest count low, just try the next referer
-      // with the last working UA.
       try { await resp.arrayBuffer(); } catch (e) {}
       continue;
     }
@@ -443,45 +445,39 @@ async function fetchUpstream(request, targetUrl, extraParams, env) {
       if (currentRef) _hostUaCache.set(targetUrl.hostname + ":ref", currentRef);
     }
 
-    return resp;
+    return { resp, effectiveUrl: currentUrl };
   }
 }
 
 function buildUpstreamHeaders(request, extraParams, currentUa, currentRef, targetHost) {
   const headers = new Headers();
 
+  // Forward only safe, necessary headers from the client.
   for (const name of REQUEST_HEADERS_TO_FORWARD) {
     const val = request.headers.get(name);
     if (val) headers.set(name, val);
   }
 
-  // Identity encoding — see compression notes above.
-  headers.set("Accept-Encoding", "identity");
+  // User-Agent — explicit per-stream UA first, then default VLC.
+  headers.set("User-Agent", currentUa || "VLC/3.0.21 LibVLC/3.0.21");
 
-  // User-Agent (VLC-like, override-able per-channel via &ua=)
-  headers.set("User-Agent", currentUa || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+  // Accept everything — matches confirmed working direct request.
+  headers.set("Accept", "*/*");
 
-  // Referer
+  // Referer — only if explicitly provided by channel or fallback.
   if (currentRef) headers.set("Referer", currentRef);
 
-  // Origin (separate from Referer)
+  // Origin — only if explicitly provided by channel.
   if (extraParams.origin) headers.set("Origin", decodeURIComponent(extraParams.origin));
-  else if (currentRef) {
-    // Auto-derive Origin from Referer so the two headers match
-    try {
-      const refUrl = new URL(currentRef);
-      headers.set("Origin", refUrl.origin);
-    } catch (e) {}
-  }
 
-  // VLC-like per-channel cookie (from #EXTVLCOPT:http-cookie=...).
+  // Per-channel cookie (from #EXTVLCOPT:http-cookie=...).
   if (extraParams.cookie) {
     const decodedCookie = decodeURIComponent(extraParams.cookie);
-    const existingCookie = headers.get("Cookie") || "";
-    headers.set("Cookie", existingCookie ? existingCookie + "; " + decodedCookie : decodedCookie);
+    headers.set("Cookie", decodedCookie);
   }
 
-  // Generic custom HTTP headers (semicolon-separated "Name: value" pairs)
+  // Generic custom HTTP headers (semicolon-separated "Name: value" pairs).
+  // Only set when explicitly provided by the channel — never inject defaults.
   if (extraParams.headers) {
     const decodedHeaders = decodeURIComponent(extraParams.headers);
     const headerEntries = decodedHeaders.split(/;;|;\s*(?=[A-Za-z][\w-]*:)/);
@@ -499,16 +495,6 @@ function buildUpstreamHeaders(request, extraParams, currentUa, currentRef, targe
       }
     }
   }
-
-  // VLC-style headers that help bypass naive portal restrictions
-  if (!headers.has("Accept")) headers.set("Accept", "*/*");
-  if (!headers.has("Accept-Language")) headers.set("Accept-Language", "en-US,en;q=0.9");
-  if (!headers.has("X-Forwarded-For")) {
-    headers.set("X-Forwarded-For", CLIENT_IP_POOL[Math.floor(Math.random() * CLIENT_IP_POOL.length)]);
-  }
-  // Some portals (Stalker/ministra) check these to recognize set-top-box clients.
-  if (!headers.has("X-Real-IP")) headers.set("X-Real-IP", CLIENT_IP_POOL[Math.floor(Math.random() * CLIENT_IP_POOL.length)]);
-  if (!headers.has("X-Requested-With")) headers.set("X-Requested-With", "XMLHttpRequest");
 
   return headers;
 }
