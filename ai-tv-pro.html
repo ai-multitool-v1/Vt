@@ -5107,10 +5107,17 @@
       }
       async function m3uFetch(url) {
          try {
-            const r = await fetch(url);
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 8000);
+            const r = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeout);
             if (r.ok) return await r.text()
          } catch (e) {
-            console.warn("Fetch failed:", url, e)
+            if (e.name === 'AbortError') {
+               console.warn("Fetch timed out (8s):", url)
+            } else {
+               console.warn("Fetch failed:", url, e)
+            }
          }
          return "";
       }
@@ -5125,7 +5132,6 @@
       let currentDisplayList = [];
       let displayedCount = 0;
       const CHANNELS_PER_PAGE = 50;
-      let hls = null;
       let _shakaPlayer = null;
       window._shakaPlayer = null;
       let isFloating = false;
@@ -5164,6 +5170,8 @@
          if (!originalUrl) return originalUrl;
          // Already proxied? don't double-wrap.
          if (originalUrl.indexOf(STREAM_PROXY_BASE) === 0) return originalUrl;
+         // Per-channel opt-out: if channel explicitly requests no proxy, skip.
+         if (ch && (ch.no_proxy === true || ch.direct === true)) return originalUrl;
          var qs = '?url=' + encodeURIComponent(originalUrl);
          if (ch && ch.user_agent) qs += '&ua=' + encodeURIComponent(ch.user_agent);
          if (ch && ch.referer) qs += '&ref=' + encodeURIComponent(ch.referer);
@@ -5193,6 +5201,8 @@
          if (ch && (ch.stream_type === 'iframe' || ch.type === 'iframe')) return false;
          // NEVER proxy uploaded media (base64 blob data)
          if (ch && (ch.stream_type === 'upload' || ch.media_data)) return false;
+         // Per-channel opt-out: explicit no_proxy / direct flag
+         if (ch && (ch.no_proxy === true || ch.direct === true)) return false;
          // User-controlled FORCE-PROXY toggle (the new toolbar button).
          // When ON, ALL streams (HTTP + HTTPS) get proxied for VLC-like behavior.
          if (window._forceProxyAll === true) return true;
@@ -5459,6 +5469,10 @@
             if (optKey === 'http_header') {
                if (!current.http_headers) current.http_headers = optVal;
                else current.http_headers += '; ' + optVal;
+            } else if (optKey === 'no_proxy' && (optVal === 'true' || optVal === '1')) {
+               current.no_proxy = true;
+            } else if (optKey === 'direct' && (optVal === 'true' || optVal === '1')) {
+               current.direct = true;
             } else {
                current[optKey] = optVal;
             }
@@ -5941,16 +5955,18 @@
          displayedCount = firstBatch.length;
          var adInsertIndex = 12; 
          var adCounter = 0;
+         const fragment = document.createDocumentFragment();
          firstBatch.forEach(function(ch, i) {
-            grid.appendChild(createChannelCard(ch, i));
+            fragment.appendChild(createChannelCard(ch, i));
             adCounter++;
             if (adCounter >= adInsertIndex && cachedInlineAds.length > 0) {
                var randomAd = cachedInlineAds[Math.floor(Math.random() * cachedInlineAds.length)];
                var adCard = createInlineAdCard(randomAd);
-               if (adCard) grid.appendChild(adCard);
+               if (adCard) fragment.appendChild(adCard);
                adCounter = 0;
             }
          });
+         grid.appendChild(fragment);
          updateLoadMoreBtn();
       }
       function appendMoreChannels() {
@@ -5960,16 +5976,18 @@
             var nextBatch = currentDisplayList.slice(displayedCount, displayedCount + CHANNELS_PER_PAGE);
             var adInsertIndex = 12;
             var adCounter = 0;
+            const fragment = document.createDocumentFragment();
             nextBatch.forEach(function(ch, i) {
-               grid.appendChild(createChannelCard(ch, displayedCount + i));
+               fragment.appendChild(createChannelCard(ch, displayedCount + i));
                adCounter++;
                if (adCounter >= adInsertIndex && cachedInlineAds.length > 0) {
                   var randomAd = cachedInlineAds[Math.floor(Math.random() * cachedInlineAds.length)];
                   var adCard = createInlineAdCard(randomAd);
-                  if (adCard) grid.appendChild(adCard);
+                  if (adCard) fragment.appendChild(adCard);
                   adCounter = 0;
                }
             });
+            grid.appendChild(fragment);
             displayedCount += nextBatch.length;
             loadMoreBtn.classList.remove("loading");
             updateLoadMoreBtn();
@@ -6040,10 +6058,11 @@
          });
          actions.appendChild(favBtn);
          inner.appendChild(actions);
-         const logo = ch.logo || `https://ui-avatars.com/api/?name=${encodeURIComponent(ch.name)}&background=111&color=fff&size=64`;
-         const safeLogo = (logo.startsWith("http://") || logo.startsWith("https://")) ? logo : `https://ui-avatars.com/api/?name=${encodeURIComponent(ch.name)}&background=111&color=fff&size=64`;
+         const logo = ch.logo || `https://ai-multitool.pages.dev/icons/android-chrome-192x192.png`;
+         const safeLogo = (logo.startsWith("http://") || logo.startsWith("https://")) ? logo : `https://ai-multitool.pages.dev/icons/android-chrome-192x192.png`;
          const img = document.createElement("img");
          img.src = safeLogo;
+         img.loading = "lazy";
          img.className = "h-10 w-10 object-contain rounded";
          img.onerror = function() {
             this.style.opacity = 0.2
@@ -6231,10 +6250,6 @@
                   const sm = document.getElementById("speedMeter");
                   if (sm) sm.textContent = "↓ " + mbps + " Mbps";
                }
-            } else if (typeof hls !== 'undefined' && hls && hls.bandwidthEstimate) {
-               const mbps = (hls.bandwidthEstimate / 1000000).toFixed(1);
-               const sm = document.getElementById("speedMeter");
-               if (sm) sm.textContent = "↓ " + mbps + " Mbps";
             } else if (typeof _shakaPlayer !== 'undefined' && _shakaPlayer) {
                try {
                   var stats = _shakaPlayer.getStats();
@@ -6343,12 +6358,6 @@
                   videoPlayer.load();
                } catch (e) {}
                videoPlayer.style.display = "none";
-               if (hls) {
-                  try {
-                     hls.destroy()
-                  } catch (e) {}
-                  hls = null;
-               }
                if (window._mpegtsPlayer) {
                   try { window._mpegtsPlayer.destroy(); } catch (eMtsIfr) {}
                   window._mpegtsPlayer = null;
@@ -6547,7 +6556,6 @@
                         playerLoader.classList.remove('hidden');
                         playerLoader.classList.add('loader-offline');
                         playerStatusText.innerText = 'Stream Offline';
-                        if (hls) { try { hls.destroy() } catch (e) {} hls = null; }
                         if (window._mpegtsPlayer) { try { window._mpegtsPlayer.destroy(); } catch (e) {} window._mpegtsPlayer = null; }
                         if (_shakaPlayer) { try { _shakaPlayer.destroy(); } catch (e) {} _shakaPlayer = null; window._shakaPlayer = null; }
                         return;
@@ -6560,7 +6568,6 @@
                         playerLoader.classList.remove('hidden');
                         playerLoader.classList.add('loader-offline');
                         playerStatusText.innerText = 'Stream Offline';
-                        if (hls) { try { hls.destroy() } catch (e) {} hls = null; }
                         if (window._mpegtsPlayer) { try { window._mpegtsPlayer.destroy(); } catch (e) {} window._mpegtsPlayer = null; }
                         if (_shakaPlayer) { try { _shakaPlayer.destroy(); } catch (e) {} _shakaPlayer = null; window._shakaPlayer = null; }
                      }
@@ -6570,10 +6577,6 @@
                   });
             } catch (e) {}
          })();
-         if (hls) {
-            try { hls.destroy() } catch (e) {}
-            hls = null;
-         }
          if (window._mpegtsPlayer) {
             try { window._mpegtsPlayer.destroy(); } catch (eMtsCleanup) {}
             window._mpegtsPlayer = null;
@@ -6601,10 +6604,6 @@
                playerLoader.classList.remove('hidden');
                playerLoader.classList.add('loader-offline');
                playerStatusText.innerText = 'Stream Offline';
-               if (hls) {
-                  try { hls.destroy() } catch (e) {}
-                  hls = null;
-               }
                if (window._mpegtsPlayer) {
                   try { window._mpegtsPlayer.destroy(); } catch (eMtsTo) {}
                   window._mpegtsPlayer = null;
@@ -6645,10 +6644,6 @@
                playerLoader.classList.add("loader-offline");
                playerStatusText.innerText = "Stream Offline";
                return;
-            }
-            if (hls) {
-               try { hls.destroy() } catch (e) {}
-               hls = null;
             }
             if (window._mpegtsPlayer) {
                try { window._mpegtsPlayer.destroy(); } catch (eMtsFb) {}
@@ -7252,13 +7247,7 @@
                         console.log("[AutoRecover] Play failed:", e);
                         if (_recoverAttempts < _maxRecoverAttempts) {
                            _recoverAttempts++;
-                           if (bfModeEnabled && hls && hls.live) {
-                              var liveEdge = hls.liveSyncPosition;
-                              if (liveEdge && liveEdge > 10) {
-                                 console.log("[AutoRecover-BF] Seeking to DVR position liveEdge-10s");
-                                 videoPlayer.currentTime = liveEdge - 10;
-                              }
-                           } else if (bfModeEnabled && _shakaPlayer) {
+                           if (bfModeEnabled && _shakaPlayer) {
                               try {
                                  if (_shakaPlayer.isLive && _shakaPlayer.isLive()) {
                                     var seekRange = _shakaPlayer.seekRange();
@@ -7340,9 +7329,6 @@
          var MIN_SEEK_GAP = 3000; 
          function getLiveEdge() {
             try {
-               if (hls && hls.liveSyncPosition !== undefined && hls.liveSyncPosition > 0) {
-                  return hls.liveSyncPosition;
-               }
                if (_shakaPlayer) {
                   try {
                      if (_shakaPlayer.isLive && _shakaPlayer.isLive()) {
@@ -7442,9 +7428,7 @@
          autoItem.className = "menu-item";
          autoItem.innerText = "Auto";
          autoItem.onclick = () => {
-            if (hls) {
-               hls.currentLevel = -1;
-            } else if (_shakaPlayer) {
+            if (_shakaPlayer) {
                try {
                   _shakaPlayer.configure({ abr: { enabled: true } });
                } catch (eShAbr) {}
@@ -7457,9 +7441,7 @@
             item.className = "menu-item";
             item.innerText = `${lvl.height||"?"}p`;
             item.onclick = () => {
-               if (hls) {
-                  hls.currentLevel = i;
-               } else if (_shakaPlayer) {
+               if (_shakaPlayer) {
                   try {
                      var variants = _shakaPlayer.getVariantTracks() || [];
                      var targetH = lvl.height;
@@ -8334,14 +8316,7 @@
                window._driftFixerInterval = setInterval(window.fixDrift, window.CHECK_INTERVAL);
                console.log("[BF-Mode] Drift Fixer started");
             }
-            if (hls && hls.live && hls.liveSyncPosition && hls.liveSyncPosition > 10) {
-               var liveEdge = hls.liveSyncPosition;
-               var lag = liveEdge - videoPlayer.currentTime;
-               if (lag < 5 || lag > 25) {
-                  console.log("[BF-Mode] Seeking to DVR position liveEdge-10s");
-                  videoPlayer.currentTime = liveEdge - 10;
-               }
-            } else if (_shakaPlayer) {
+            if (_shakaPlayer) {
                try {
                   if (_shakaPlayer.isLive && _shakaPlayer.isLive()) {
                      var seekRange = _shakaPlayer.seekRange();
@@ -8512,7 +8487,6 @@
          if (searchInput) searchInput.value = '';
          if (mobileSearchInput) mobileSearchInput.value = '';
          if (currentPlayingChannel) {
-            if (hls) { try { hls.destroy(); } catch(e) {} hls = null; }
             if (window._mpegtsPlayer) { try { window._mpegtsPlayer.destroy(); } catch(eMtsR) {} window._mpegtsPlayer = null; }
             if (_shakaPlayer) {
                try { _shakaPlayer.destroy(); } catch(eShR) {}
